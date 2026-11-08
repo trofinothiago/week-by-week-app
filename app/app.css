@@ -1,0 +1,14 @@
+/* Week by Week app: only what the page itself doesn't have (the sign-in screens and the account page).
+   Everything else (colours, type, cards, buttons, fields) is the page's own iPhone look. */
+.gate{position:fixed;inset:0;z-index:50;overflow-y:auto;background:var(--bg);padding-top:env(safe-area-inset-top,0px)}
+.gform{display:grid;gap:14px}
+.gform .btn{width:100%}
+.gnote{color:var(--muted);line-height:1.45}
+.gmsg{min-height:1.4em;font-size:.92rem;color:var(--muted)}
+.gmsg.bad{color:var(--bad)}
+.acct{display:grid;gap:10px}
+.acct .kv2{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;border-bottom:1px solid var(--rule2);padding-bottom:8px}
+.acct .kv2:last-child{border-bottom:0;padding-bottom:0}
+.acct .kv2 span:first-child{color:var(--muted)}
+.acct input[type=file]{width:100%;min-width:0}
+.acct a.btn{display:flex;align-items:center;justify-content:center;text-decoration:none}
