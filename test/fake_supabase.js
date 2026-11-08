@@ -32,7 +32,9 @@
   const eqs = q => Object.fromEntries([...q.entries()].filter(([, v]) => v.startsWith('eq.')).map(([k, v]) => [k, decodeURIComponent(v.slice(3))]));
   const pick = (row, sel) => sel && sel !== '*' ? Object.fromEntries(sel.split(',').map(k => [k, row[k]])) : row;
   const row = (c, id) => ({coll: c, id, data: store[c][id].data, updated_at: store[c][id].at});
-  const now = () => new Date().toISOString();
+  // the server's clock: it only moves forward, whatever the kit does to the page's clock (it jumps days ahead and back)
+  let last = 0;
+  const now = () => { last = Math.max(last + 1, Date.now()); return new Date(last).toISOString(); };
 
   async function fakeFetch(input, init = {}){
     const u = new URL(typeof input === 'string' ? input : input.url), q = u.searchParams, m = (init.method || 'GET').toUpperCase();
