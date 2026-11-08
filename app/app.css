@@ -1,5 +1,7 @@
 /* Week by Week app: only what the page itself doesn't have (the sign-in screens and the account page).
    Everything else (colours, type, cards, buttons, fields) is the page's own iPhone look. */
+.gbrand{display:flex;align-items:center;gap:14px;min-width:0}
+.gmark img{display:block;width:56px;height:56px;border-radius:13px;box-shadow:0 0 0 1px var(--rule2)}
 .gate{position:fixed;inset:0;z-index:50;overflow-y:auto;background:var(--bg);padding-top:env(safe-area-inset-top,0px)}
 .gform{display:grid;gap:14px}
 .gform .btn{width:100%}

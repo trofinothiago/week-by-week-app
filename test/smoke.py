@@ -153,10 +153,15 @@ with sync_playwright() as p:
                 ctx, pg, errs = open_as(role, path, w, dark)
                 if path == 'import.html': pg.set_input_files('input[type=file]', bk); pg.wait_for_timeout(300)
                 if sideways(pg): bad.append(f'{path} {w}px {"dark" if dark else "light"}: scrolls sideways')
+                if path == 'index.html':
+                    icon = ev(pg, "() => document.querySelector('link[rel=apple-touch-icon]').getAttribute('href')")
+                    mark = ev(pg, "() => document.querySelector('.gmark img').currentSrc.split('/').pop()")
+                    want = 'icon-dark-180.png' if dark else 'icon-180.png'
+                    if icon != want or mark != want: bad.append(f'{"dark" if dark else "light"}: icon {icon}, mark {mark}, wanted {want}')
                 if errs: bad.append(f'{path}: {errs[0]}')
                 if dark and w == 375: shot(pg, path.split('.')[0] + '-dark')
                 ctx.close()
-    check('the sign-in and account screens fit the phone (375 and 430 px, light and dark)', not bad, bad)
+    check('the sign-in and account screens fit the phone (375 and 430 px, light and dark), with the light or dark Four pots icon', not bad, bad)
 
     br.close()
 srv.shutdown()

@@ -14,7 +14,7 @@ import os, re, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 page = open(os.path.join(ROOT, 'src/week-by-week.html'), encoding='utf-8').read()
 
-APP_HEAD = ('<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-180.png">'
+APP_HEAD = ('<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-180.png"><script src="app/icon.js"></script>'
             '<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">'
             '<meta name="apple-mobile-web-app-title" content="Week by Week"><meta name="apple-mobile-web-app-status-bar-style" content="default">'
             '<link rel="stylesheet" href="app/app.css">')

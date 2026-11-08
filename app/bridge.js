@@ -110,9 +110,10 @@
   const gate = (sub, body) => {
     let g = document.getElementById('gate');
     if (!g){ g = document.createElement('div'); g.id = 'gate'; g.className = 'gate'; document.body.appendChild(g); }
-    g.innerHTML = `<div class="wrap"><div class="ios-title"><div><h1>Week by Week</h1><p>${esc(sub)}</p></div></div><div class="stack">${body}</div></div>`;
+    g.innerHTML = `<div class="wrap"><div class="ios-title"><div class="gbrand">${MARK}<div><h1>Week by Week</h1><p>${esc(sub)}</p></div></div></div><div class="stack">${body}</div></div>`;
     return g;
   };
+  const MARK = '<picture class="gmark"><source srcset="icon-dark-180.png" media="(prefers-color-scheme: dark)"><img src="icon-180.png" alt="" width="56" height="56"></picture>';
   const ungate = () => { const g = document.getElementById('gate'); if (g) g.remove(); };
   const say = (g, t, bad) => { const m = g.querySelector('.gmsg'); m.textContent = t; m.classList.toggle('bad', !!bad); };
   const field = (id, label, type, ac) => `<div class="fld"><label for="${id}">${label}</label><input id="${id}" type="${type}" autocomplete="${ac}" required></div>`;
