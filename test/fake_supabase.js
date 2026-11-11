@@ -28,7 +28,8 @@
 
   const res = (status, body) => new Response(status === 204 ? null : JSON.stringify(body), {status, headers: {'content-type': 'application/json'}});
   const denied = () => res(403, {code: '42501', message: 'new row violates row-level security policy for table "docs"', details: null, hint: null});
-  const who = h => { const a = h.get('authorization') || ''; const t = a.replace(/^Bearer /, ''); if (t === KEY || !t.includes('.')) return null; try { return USERS.find(u => u.id === unb64(t.split('.')[1]).sub) || null; } catch (e) { return null; } };
+  window.__as = null;   // the kit can act as Rory ('viewer') to answer from his account
+  const who = h => { if (window.__as) return USERS.find(u => u.role === window.__as) || null; const a = h.get('authorization') || ''; const t = a.replace(/^Bearer /, ''); if (t === KEY || !t.includes('.')) return null; try { return USERS.find(u => u.id === unb64(t.split('.')[1]).sub) || null; } catch (e) { return null; } };
   const eqs = q => Object.fromEntries([...q.entries()].filter(([, v]) => v.startsWith('eq.')).map(([k, v]) => [k, decodeURIComponent(v.slice(3))]));
   const pick = (row, sel) => sel && sel !== '*' ? Object.fromEntries(sel.split(',').map(k => [k, row[k]])) : row;
   const row = (c, id) => ({coll: c, id, data: store[c][id].data, updated_at: store[c][id].at});
@@ -58,7 +59,8 @@
       if (!me) return denied();
       if (m === 'GET'){
         if (!role) return res(200, []);
-        const all = Object.keys(store).sort().flatMap(c => Object.keys(store[c]).sort().map(id => row(c, id)));
+        const f = eqs(q);
+        const all = Object.keys(store).filter(c => c !== 'answers' && (!f.coll || c === f.coll)).sort().flatMap(c => Object.keys(store[c]).filter(id => !f.id || id === f.id).sort().map(id => row(c, id)));
         const off = +q.get('offset') || 0, lim = q.has('limit') ? +q.get('limit') : 1000;
         return res(200, all.slice(off, off + lim).map(r => pick(r, q.get('select'))));
       }
@@ -81,6 +83,32 @@
         return res(200, [{id: f.id}]);
       }
     }
+    if (u.pathname === '/rest/v1/answers'){   // Rory's answers: the same rules as supabase/002_rory_answers.sql
+      const A = store.answers ||= {};
+      if (m === 'GET'){
+        if (!role) return res(200, []);
+        const all = Object.keys(A).sort().map(id => ({id, data: A[id].data, at: A[id].at}));
+        const off = +q.get('offset') || 0, lim = q.has('limit') ? +q.get('limit') : 1000;
+        return res(200, all.slice(off, off + lim).map(r => pick(r, q.get('select'))));
+      }
+      if (m !== 'POST') return res(405, {message: 'answers are never changed or deleted'});
+      if (role !== 'viewer') return denied();
+      const d = body.data || {}, said = String(d.said || '').trim(), ts = now();
+      if (!['compare', 'wish'].includes(d.kind) || !['yes', 'no'].includes(d.answer) || !d.ref || said.length < 2) return res(400, {code: '23514', message: 'check constraint'});
+      const c = (store[d.kind === 'compare' ? 'compare' : 'wishlist'] || {})[d.ref], qd = c && c.data;
+      const open = d.kind === 'compare' ? qd && qd.rory && qd.status !== 'applied' && qd.rory.asked === d.asked && qd.rory.plan === d.plan
+        : qd && !['bought', 'dropped'].includes(qd.status || 'waiting') && (qd.asked || qd.addedAt) === d.asked;
+      if (!open) return res(400, {code: '22023', message: 'That question isn\'t open'});
+      if (Object.values(A).some(a => a.data.kind === d.kind && a.data.ref === d.ref && a.data.asked === d.asked)) return res(409, {code: '23505', message: 'Already answered'});
+      const data = {...d, at: ts, said};
+      A[body.id] = {data, at: ts}; window.__writes.push(['answer', body.id]);
+      const eur = n => '€' + Number(n || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      const title = d.kind === 'compare' ? `Compare, ${qd.name || ''} · ${qd.rory.planName || ''}` : `wishlist, ${qd.what || ''} ${eur(qd.price)}`;
+      const short = d.kind === 'compare' ? `Rory said ${d.answer} to ${qd.name || ''} · ${qd.rory.planName || ''}: “${said}”` : `Rory said ${d.answer} to ${qd.what || ''}: “${said}”`;
+      const day = new Intl.DateTimeFormat('en-CA', {timeZone: 'Europe/Dublin'}).format(new Date(ts));
+      (store.changelog ||= {})['ans' + body.id] = {data: {at: ts, date: day, kind: 'decision', text: `Rory’s answer, from his own account (${title}): ${d.answer}, “${said}”.`, [d.kind === 'compare' ? 'cmp' : 'wish']: d.ref, step: 'answer', rory: d.answer, short}, at: ts};
+      return res(201, [pick({id: body.id, data, at: ts}, q.get('select'))]);
+    }
     if (u.pathname === '/rest/v1/rpc/doc_merge'){
       if (role !== 'editor') return res(403, {code: '42501', message: 'read only'});
       const d = (store[body.p_coll] || {})[body.p_id];
@@ -94,7 +122,7 @@
       if (!Array.isArray(list) || !list.length) return res(400, {code: '22023', message: 'empty import'});
       if (list.some(d => !/^[a-z][a-z0-9_]{0,39}$/.test(d.coll) || !d.id || String(d.id).includes('/'))) return res(400, {code: '23514', message: 'check constraint'});
       for (const k of Object.keys(store)) delete store[k];
-      for (const d of list) (store[d.coll] ||= {})[d.id] = {data: d.data, at: now()};
+      for (const d of list) (store[d.coll] ||= {})[d.id] = {data: d.data, at: d.coll === 'answers' && d.data.at ? d.data.at : now()};
       window.__writes.push(['import', list.length]);
       return res(200, list.length);
     }

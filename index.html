@@ -945,8 +945,8 @@ const occName = (b, d) => { if (!b || b.freq !== 'instal') return b ? b.name : '
 
 /* ---------- state ---------- */
 const S = {
-  tab:'today', sub:{money:'balance', plan:'plan', settings:'setup'}, todayOpen:'', db:null, noDb:false, canWrite:true, dlP:Promise.resolve(null), sampleP:Promise.resolve(null),
-  settings:{}, plan:{}, facts:{}, advice:{}, energy:{}, health:{}, assets:[], bills:[], cardlog:[], spending:[], wishlist:[], changelog:[], weeks:{}, wise:[], checks:[], klarna:[], loans:[], moves:[], compare:[], prep:[], prepCfg:{},
+  tab:'today', sub:{money:'balance', plan:'plan', settings:'setup'}, todayOpen:'', db:null, noDb:false, canWrite:true, canAnswer:false, dlP:Promise.resolve(null), sampleP:Promise.resolve(null),
+  settings:{}, plan:{}, facts:{}, advice:{}, energy:{}, health:{}, assets:[], bills:[], cardlog:[], spending:[], wishlist:[], changelog:[], weeks:{}, wise:[], checks:[], klarna:[], loans:[], moves:[], compare:[], answers:[], prep:[], prepCfg:{},
   got:{}, reportWeek:null, billOpen:false, err:'', busy:false,
   f:{
     bill:null, set:null, plan:null,
@@ -3014,7 +3014,7 @@ function reportFull(ws, D){   // the live view: the one-page board, then the det
 function vRory(){
   const cur = weekStartOf(today()), ws = S.reportWeek ? pd(S.reportWeek) : cur, isCur = iso(ws) === iso(cur);
   if (!flow().configured) return '<p class="mut">Nothing set up yet.</p>';
-  return `<div class="stack"><div class="weeknav" style="justify-content:center"><button class="btn small" data-act="wkPrev" aria-label="Previous week">←</button><b>${weekLabel(ws)}</b><button class="btn small" data-act="wkNext" aria-label="Next week"${isCur ? ' disabled' : ''}>→</button></div>${isCur ? cmpRoryAsk() : ''}${reportFull(ws, reportData(ws))}</div>`;
+  return `<div class="stack"><div class="weeknav" style="justify-content:center"><button class="btn small" data-act="wkPrev" aria-label="Previous week">←</button><b>${weekLabel(ws)}</b><button class="btn small" data-act="wkNext" aria-label="Next week"${isCur ? ' disabled' : ''}>→</button></div>${isCur ? roryAskCard() : ''}${reportFull(ws, reportData(ws))}</div>`;
 }
 function vHistory(){
   const list = S.changelog.slice().sort((a, b) => (b.at || '').localeCompare(a.at || ''));
@@ -4543,12 +4543,12 @@ const cmpKey = () => 'p' + Date.now().toString(36) + (cmpSeq++);
 const CMP_NUM = ['price', 'covers', 'promoPrice', 'promoMonths', 'setup', 'cancelFee', 'lock', 'trial', 'standing', 'day', 'night', 'peak', 'disc'];
 function cmpNewForm(pre = {}){
   const k = cmpKey(); S.f['cp_' + k] = {name: '', price: has(pre.price) ? String(pre.price) : '', per: 'month', covers: '1', feats: ''};
-  S.f.cmp = {_id: '', name: pre.name || '', kind: pre.kind || 'sub', users: '2', account: 'bills', day: '', start: iso(today()), leaveFee: '', rm: {}, plans: [k], use: {}, roryWords: ''};
+  S.f.cmp = {_id: '', name: pre.name || '', kind: pre.kind || 'sub', users: '2', account: 'bills', day: '', start: iso(today()), leaveFee: '', rm: {}, plans: [k], use: {}};
   S.f.cmpmin = {}; S.err = ''; S.confirmCmp = null;
 }
 function cmpFormFrom(c){
   const plans = (c.plans || []).map(p => { const k = p.id || cmpKey(); S.f['cp_' + k] = Object.fromEntries(Object.entries({...p, feats: cmpList(p.feats).join(', ')}).filter(([x]) => x !== 'id').map(([x, v]) => [x, v == null ? '' : String(v)])); return k; });
-  S.f.cmp = {_id: c.id, name: c.name || '', kind: c.kind || 'sub', users: String(c.users || 2), account: c.account || 'bills', day: has(c.day) ? String(c.day) : '', start: c.start || iso(today()), leaveFee: num(c.leaveFee) ? String(c.leaveFee) : '', rm: Object.fromEntries((c.replaces || []).map(id => [id, true])), plans, roryWords: ''};
+  S.f.cmp = {_id: c.id, name: c.name || '', kind: c.kind || 'sub', users: String(c.users || 2), account: c.account || 'bills', day: has(c.day) ? String(c.day) : '', start: c.start || iso(today()), leaveFee: num(c.leaveFee) ? String(c.leaveFee) : '', rm: Object.fromEntries((c.replaces || []).map(id => [id, true])), plans};
   const u = cmpUseMap(c); S.f.cmp.use = Object.fromEntries(Object.entries(u).map(([k, v]) => [k, v.lvl])); S.f.cmpmin = Object.fromEntries(Object.entries(u).filter(([, v]) => v.min).map(([k, v]) => [k, String(v.min)]));
   S.err = ''; S.confirmCmp = null;
 }
@@ -4607,10 +4607,14 @@ function cmpFirst(c, p){   // the first charge: the switch date, after any free 
   return d;
 }
 const CMP_ICON = {ok: '✓', warn: '!', bad: '✕', idle: '•'};
+/* Rory answers from his own account: his answers are a collection of their own that only his account can write (the database refuses anyone else),
+   and the database writes the History line. An answer counts for the question it answers (the same "asked" time). */
+function roryAns(kind, ref, asked){ return asked ? S.answers.filter(a => a.kind === kind && a.ref === ref && a.asked === asked).sort((a, b) => (a.at || '').localeCompare(b.at || '')).pop() || null : null; }
+function cmpRory(c){ const R = c && c.rory; if (!R) return null; const A = roryAns('compare', c.id, R.asked), ok = !!A && A.plan === R.plan; return {...R, answer: ok ? A.answer : null, said: ok ? A.said : '', answeredAt: ok ? A.at : null}; }
 const CMP_WAIT_H = 48, CMP_REASK_D = 7;   // a plan that costs more waits 48 hours after Rory is asked (like rule 5); after Rory's no, a week before asking again
 const cmpWhen = d => `${fWD.format(d)} ${dshort(d)}, ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 function cmpDecision(c, E){   // where the decision stands: rate every service → ask Rory → his answer, in his words → 48 hours if it costs more → apply
-  const R = c.rory || null, row = R && E ? E.rows.find(r => r.p.id === R.plan) : null;
+  const R = cmpRory(c), row = R && E ? E.rows.find(r => r.p.id === R.plan) : null;
   const stale = !!(R && R.asked && (!row || (R.price != null && Math.abs(num(R.price) - num(row.k.monthly)) > .005)));   // the plan or its price changed after Rory was asked
   const waitTill = R && R.asked && row && row.diff > .005 ? Date.parse(R.asked) + CMP_WAIT_H * 3600e3 : null;
   const yes = !!(R && R.answer === 'yes' && !stale), no = !!(R && R.answer === 'no');
@@ -4630,64 +4634,68 @@ async function cmpAsk(pid){   // step 2: the plan Thiago wants goes to Rory
   const id = await cmpSave(true); if (!id) return;
   const c = {...cmpFromForm(), id}, E = cmpEval(c), r = E.rows.find(x => x.p.id === pid), at = new Date().toISOString(), again = !!(c.rory && c.rory.asked);
   const costTxt = r.diff < -.005 ? `${money(-r.diff)} a month less than now` : r.diff > .005 ? `${money(r.diff)} a month more than now` : 'the same as now';
-  const rory = {plan: pid, planName: r.p.name, price: Math.round(r.k.monthly * 100) / 100, diff: r.diff, asked: at, answer: null, said: '', answeredAt: null, verdict: r.st, use: cmpUseLine(E, r)};
+  const rory = {plan: pid, planName: r.p.name, price: Math.round(r.k.monthly * 100) / 100, diff: r.diff, asked: at, verdict: r.st, use: cmpUseLine(E, r)};   // the question; Rory's answer is his own (answers)
   try {
     await S.db.doc('compare/' + id).set({...cmpDoc(c), rory, updatedAt: at, createdAt: c.createdAt || at});
     await logChange('decision', `${again ? 'Asked Rory again' : 'Asked Rory'} (Compare, ${c.name}): ${r.p.name} at ${money(r.k.monthly)} a month, ${costTxt}${rory.use ? `; ${rory.use}` : ''}. The page says: ${CMP_LABEL[r.st]}.`, {cmp: id, step: 'ask', short: `Thiago asks: ${c.name} · ${r.p.name}, ${money(r.k.monthly)} a month (${costTxt})`});
-    S.f.cmp.roryWords = ''; S.err = ''; toast('Rory sees it at the top of his report'); render();
+    S.err = ''; toast('Rory sees it at the top of his report'); render();
   } catch (e) { writeErr(e); }
 }
-async function cmpAnswer(ans){   // step 3: Rory's answer, in his words
-  if (!needDb()) return;
-  const c = cmpFromForm(); if (!c || !c.id) return; const E = cmpEval(c), D = cmpDecision(c, E);
-  if (!D.waiting){ toast('There is no question waiting for Rory.'); return; }
-  const said = String(S.f.cmp.roryWords || '').trim();
-  if (said.length < 2){ S.err = 'Write what Rory said, in his words (in English): it goes in his report as you wrote it.'; render(); return; }
-  const at = new Date().toISOString(), rory = {...c.rory, answer: ans, said, answeredAt: at};
+async function roryAnswer(kind, ref, ans){   // Rory answers Thiago's question himself, from his account, in his words
+  if (!S.db || !S.canAnswer || !['yes', 'no'].includes(ans)) return;
+  const q = (roryWaiting().find(x => x.kind === kind && x.ref === ref) || {}).q;
+  if (!q){ toast('That question isn’t waiting any more.'); return; }
+  const said = String((S.f.ans || {})[ref] || '').trim(); S.errAt = 'ans' + ref;
+  if (said.length < 2){ S.err = 'Write a few words: Thiago reads them exactly as you write them.'; render(); return; }
   try {
-    await S.db.doc('compare/' + c.id).set({...cmpDoc(c), rory, updatedAt: at, createdAt: c.createdAt || at});
-    await logChange('decision', `Rory’s answer, recorded by Thiago (Compare, ${c.name} · ${rory.planName}): ${ans === 'yes' ? 'yes' : 'no'}, “${said}”.${ans === 'yes' && D.waitTill && Date.now() < D.waitTill ? ` It costs more, so it waits until ${cmpWhen(new Date(D.waitTill))}.` : ''}`, {cmp: c.id, step: 'answer', rory: ans, short: `Rory said ${ans} to ${c.name} · ${rory.planName}: “${said}” (recorded by Thiago)`});
-    S.f.cmp.roryWords = ''; S.err = ''; toast('Recorded'); render();
+    await S.db.collection('answers').add({kind, ref, asked: q.asked, ...(kind === 'compare' ? {plan: q.plan} : {}), answer: ans, said});
+    (S.f.ans ||= {})[ref] = ''; S.err = ''; toast('Sent to Thiago'); render();
   } catch (e) { writeErr(e); }
 }
 function cmpDecideBox(c, E){   // the steps, so a decision is never taken alone or in the heat of the moment
   if (!E || !E.rows.some(r => r.st !== 'idle') || c.applied) return '';
   const D = cmpDecision(c, E), step = (ok, t2, sub) => `<li class="${ok ? 'ok' : ''}"><b>${ok ? '✓' : '○'} ${t2}</b>${sub ? `<small>${sub}</small>` : ''}</li>`;
-  const answer = D.waiting && S.canWrite ? `<div class="cmpans">${field('cmp', 'roryWords', 'What Rory said, in his words (English)', {ph: 'OK, but only the Family plan'})}<div class="actions"><button class="btn strong" data-act="cmpAnswer" data-v="yes">Rory said yes</button><button class="btn" data-act="cmpAnswer" data-v="no">Rory said no</button></div></div>` : '';
   return `<div class="cmpdecide"><h3>Decide it with Rory</h3><ol class="cmpsteps">
     ${step(!E.unrated.length, 'How much we use each service', E.unrated.length ? `${E.unrated.length} still to rate: ${esc(cmpNames(E.unrated))}` : esc([E.svc.filter(x => (E.U[x.key] || {}).lvl === 'need').length ? `need: ${cmpNames(E.svc.filter(x => E.U[x.key].lvl === 'need'))}` : '', E.svc.filter(x => (E.U[x.key] || {}).lvl === 'never').length ? `never: ${cmpNames(E.svc.filter(x => E.U[x.key].lvl === 'never'))}` : ''].filter(Boolean).join(' · ')))}
     ${step(!!(D.R && D.R.asked && !D.stale), 'Ask Rory', D.stale ? 'The plan or its price changed after Rory was asked: ask him again.' : D.R && D.R.asked ? `Asked ${esc(cmpWhen(new Date(D.R.asked)))} about ${esc(D.R.planName)}. It’s at the top of his report.` : 'Pick the plan below: “Ask Rory about this one”. Talk to him; the page shows him the numbers.')}
-    ${step(D.yes, 'Rory’s answer, in his words', D.no ? `Rory said no: “${esc(D.R.said)}”.` : D.yes ? `Yes: “${esc(D.R.said)}”.` : 'Recorded here after you talk. His report shows it exactly as written.')}
+    ${step(D.yes, 'Rory’s answer, in his words', D.no ? `Rory said no: “${esc(D.R.said)}”.` : D.yes ? `Yes: “${esc(D.R.said)}”.` : 'Rory answers in his own app, in his words. History and his report show it exactly as he wrote it.')}
     ${D.R && D.R.diff > .005 && !D.stale ? step(D.ready || (D.yes && D.waitTill && Date.now() >= D.waitTill), 'Sleep on it: 48 hours', `It costs more, so it can be applied from ${esc(cmpWhen(new Date(D.waitTill)))} (like rule 5).`) : ''}
     ${step(false, 'Apply it', D.ready ? 'Ready: “Rory said yes: apply it” on the plan.' : 'Only after his yes.')}</ol>
-    ${answer}
-    <p class="mut" style="font-size:.85rem">The page can’t stop anyone pressing a button. What it does: nothing is applied without Rory’s yes, and every step (the question, his answer as written, the choice) is in History and in Rory’s report.</p></div>`;
+    <p class="mut" style="font-size:.85rem">Only Rory’s own account can answer: the database refuses an answer from anyone else. Nothing is applied without his yes, and every step (the question, his answer as he wrote it, the choice) is in History and in his report.</p></div>`;
 }
-function cmpRoryAsk(){   // Rory's view, live: what Thiago is asking him
-  const list = S.compare.map(c => { const E = cmpEval(cmpSaved(c)); return {c, E, D: cmpDecision(c, E)}; }).filter(x => x.D.waiting && x.D.row);
+function roryWaiting(){   // every question waiting for Rory's answer: a plan in Compare, a want over the limit on the wishlist
+  const cmp = S.compare.filter(c => !c.applied).map(c => { const E = cmpEval(cmpSaved(c)), D = cmpDecision(c, E); return D.waiting && D.row ? {kind: 'compare', ref: c.id, q: D.R, at: D.R.asked, title: `${c.name} · ${D.row.p.name}`, c, E, D} : null; }).filter(Boolean);
+  const wish = wishItems().map(w => { const q = wishAsk(w); return q && !q.answer ? {kind: 'wish', ref: w.id, q, at: q.asked, title: `${w.what || 'Item'}, ${money(w.price)}`, w} : null; }).filter(Boolean);
+  return cmp.concat(wish).sort((x, y) => x.at.localeCompare(y.at));
+}
+function roryAskCard(){   // Rory's view, live: what Thiago is asking him, and (from his own account) his answer
+  const list = roryWaiting();
   if (!list.length) return '';
-  return `<div class="board"><section class="bcard wide bask"><h3>Thiago is asking you <span class="bh">yes or no?</span></h3><div class="blist">${list.map(({c, E, D}) => { const r = D.row;
-    return `<div class="brow"><span class="bi warn">?</span><span><b>${esc(c.name)} · ${esc(r.p.name)}</b><small>${money(r.k.monthly)} a month · ${r.diff < -.005 ? `${money(-r.diff)} less than now` : r.diff > .005 ? `${money(r.diff)} more than now` : 'same as now'}${cmpUseLine(E, r) ? ` · ${esc(cmpUseLine(E, r))}` : ''} · the page says: ${CMP_LABEL[r.st]}</small></span><i>${m0(r.k.monthly)}</i></div>`; }).join('')}</div>
-    <p class="bsmall">Tell Thiago your answer. He writes it down in your words, and it shows here.</p></section></div>`;
+  const box = x => !S.canAnswer ? '' : `<div class="cmpans">${field('ans', x.ref, 'Your answer, in your words', {ph: x.kind === 'compare' ? 'OK, but only the Family plan' : 'Yes, it can wait a week'})}${S.err && S.errAt === 'ans' + x.ref ? `<p class="err">${esc(S.err)}</p>` : ''}<div class="actions"><button class="btn strong" data-act="roryAnswer" data-k="${x.kind}" data-id="${esc(x.ref)}" data-v="yes">Yes</button><button class="btn" data-act="roryAnswer" data-k="${x.kind}" data-id="${esc(x.ref)}" data-v="no">No</button></div></div>`;
+  const row = x => { if (x.kind === 'wish'){ const vd = wishVerdict(x.w); return `<div class="brow"><span class="bi warn">?</span><span><b>${esc(x.title)}</b><small>${esc(WHO[x.w.who] || '')} · a want on the wishlist · ${esc(vd.v)}${x.w.note ? ` · ${esc(x.w.note)}` : ''}</small></span><i>${m0(x.w.price)}</i></div>${box(x)}`; }
+    const r = x.D.row, use = cmpUseLine(x.E, r);
+    return `<div class="brow"><span class="bi warn">?</span><span><b>${esc(x.title)}</b><small>${money(r.k.monthly)} a month · ${r.diff < -.005 ? `${money(-r.diff)} less than now` : r.diff > .005 ? `${money(r.diff)} more than now` : 'same as now'}${use ? ` · ${esc(use)}` : ''} · the page says: ${CMP_LABEL[r.st]}</small></span><i>${m0(r.k.monthly)}</i></div>${box(x)}`; };
+  return `<div class="board"><section class="bcard wide bask"><h3>Thiago is asking you <span class="bh">yes or no?</span></h3><div class="blist">${list.map(row).join('')}</div>
+    <p class="bsmall">${S.canAnswer ? 'Your answer goes straight to Thiago and into History, exactly as you write it. Only your account can answer.' : 'Rory answers from his own account.'}</p></section></div>`;
 }
 /* Rory's report: every decision of the week (Compare steps, and bill changes with whether Rory was in on them) */
 const DEC_RORY = {yes: 'decided with Rory', no: 'Rory not asked yet', na: 'not a choice'};
 function weekDecisions(ws){
   const a = iso(ws), z = iso(addDays(ws, 6));
-  return S.changelog.filter(x => x.date >= a && x.date <= z && ((x.kind === 'decision' && x.cmp) || ((x.kind === 'bill' || x.kind === 'ready') && x.rory))).sort((x, y) => (x.at || '').localeCompare(y.at || ''));
+  return S.changelog.filter(x => x.date >= a && x.date <= z && ((x.kind === 'decision' && (x.cmp || x.wish)) || ((x.kind === 'bill' || x.kind === 'ready') && x.rory))).sort((x, y) => (x.at || '').localeCompare(y.at || ''));
 }
 function decisionsCard(ws, D, icon){
-  const L = weekDecisions(ws), waiting = D.isCurrent ? S.compare.filter(c => c.rory && c.rory.asked && !c.rory.answer) : [];
+  const L = weekDecisions(ws), waiting = D.isCurrent ? roryWaiting() : [];
   if (!L.length && !waiting.length) return '';
   const st = x => x.kind !== 'decision' ? (x.rory === 'no' ? 'bad' : x.rory === 'yes' ? 'ok' : 'idle') : x.step === 'ask' ? 'idle' : x.step === 'answer' ? (x.rory === 'yes' ? 'ok' : 'bad') : x.step === 'apply' ? 'ok' : 'idle';
   const txt = x => x.kind === 'bill' ? `${x.short || x.text}` : (x.short || x.text);
   const rows = L.slice(-8).map(x => `<div class="brow">${icon(st(x))}<span><b>${esc(String(txt(x)).slice(0, 120))}</b><small>${fWD.format(pd(x.date))}${x.kind !== 'decision' ? ` · ${esc(DEC_RORY[x.rory] || '')}` : ''}</small></span><i></i></div>`).join('');
-  return `<section class="bcard wide"><h3>Decisions <span class="bh">${L.length} this week</span></h3><div class="blist">${rows}${waiting.map(c => `<div class="brow">${icon('warn')}<span><b>Waiting for your answer: ${esc(c.name)} · ${esc(c.rory.planName || '')}</b><small>asked ${esc(cmpWhen(new Date(c.rory.asked)))}</small></span><i></i></div>`).join('')}</div>${L.length > 8 ? `<p class="bsmall">and ${L.length - 8} more in History.</p>` : ''}</section>`;
+  return `<section class="bcard wide"><h3>Decisions <span class="bh">${L.length} this week</span></h3><div class="blist">${rows}${waiting.map(x => `<div class="brow">${icon('warn')}<span><b>Waiting for your answer: ${esc(x.title)}</b><small>asked ${esc(cmpWhen(new Date(x.at)))}</small></span><i></i></div>`).join('')}</div>${L.length > 8 ? `<p class="bsmall">and ${L.length - 8} more in History.</p>` : ''}</section>`;
 }
 function decisionHeads(ws, D){   // page 1 heads-up lines
   const out = [], L = weekDecisions(ws);
   const alone = L.filter(x => x.kind !== 'decision' && x.rory === 'no'); if (alone.length) out.push({st: 'bad', i: '✕', t: `Decided without Rory: ${alone.map(x => String(x.short || x.text).split(':')[0].replace(/^Added |^Removed /, '')).slice(0, 2).join(', ')}`});
-  if (D.isCurrent) for (const c of S.compare.filter(c => c.rory && c.rory.asked && !c.rory.answer).slice(0, 1)) out.push({st: 'warn', i: '?', t: `Thiago asks: ${c.name} · ${c.rory.planName} — yes or no?`});
+  if (D.isCurrent) for (const x of roryWaiting().slice(0, 1)) out.push({st: 'warn', i: '?', t: `Thiago asks: ${x.title} — yes or no?`});
   for (const x of L.filter(x => x.step === 'apply').slice(-1)) out.push({st: 'ok', i: '✓', t: `Decided together: ${String(x.short || '').replace(/^Applied: /, '')}`});
   return out;
 }
@@ -4696,14 +4704,14 @@ const cmpSaved = c => ({...c, must: cmpList(c.must), replaces: (c.replaces || []
 function cmpEval(c){   // every plan through the same test a new bill gets, with the answer: green, amber or red
   if (!c || !flow().configured) return null;
   const A = dueAdvice();
-  const sig = JSON.stringify([cmpDoc(c), S._pk && S._pk.sig, st().updatedAt, PL().updatedAt, (S.energy || {}).updatedAt, S.spending.length, S.cardlog.length, S.wishlist.length, iso(today())]);
+  const sig = JSON.stringify([cmpDoc(c), S._pk && S._pk.sig, st().updatedAt, PL().updatedAt, (S.energy || {}).updatedAt, S.spending.length, S.cardlog.length, S.wishlist.length, S.answers.length, iso(today())]);   // Rory's answers live outside the comparison: a new one is judged again
   S._cmpE ||= new Map(); if (S._cmpE.has(sig)) return S._cmpE.get(sig);
   const fl = flow(), R = billRoom(), AD = advisor(), cs = cardState(), bal = cs ? cs.bal : 0, pr0 = project(0), now = cmpToday(c), t = today();
   const m0s = monthStart(pd(c.start) > t ? pd(c.start) : t), before = commitAt(m0s, {payoff: pr0 && pr0.payoff});
   const known = essentialsKnown(), gap0 = known ? Math.max(0, Math.round(-fl.free * 100) / 100) : null, tB = num(st().transferBills);
   const drop = c.replaces.length ? {ids: c.replaces, from: pd(c.start)} : null;
   const U = cmpUseMap(c), svc = cmpServices(c), unrated = svc.filter(x => !U[x.key]), lv = l => svc.filter(x => (U[x.key] || {}).lvl === l);
-  const needS = lv('need'), someS = lv('some'), neverS = lv('never'), RY = c.rory || null;
+  const needS = lv('need'), someS = lv('some'), neverS = lv('never'), RY = cmpRory(c);
   const rows = c.plans.map(p => {
     const k = cmpCost(c, p), why = [], add = (s2, txt) => why.push({st: s2, t: txt});
     const first = cmpFirst(c, p), yearly = p.per === 'year' && c.kind !== 'energy';
@@ -4922,8 +4930,8 @@ async function cmpApply(pid){
       what = `${nb.name} at ${yearly ? `${money(price)} a year` : `${money(price)} a month`} (${ACC[c.account]?.short || c.account}), first charge ${dlong(first)}${applied.replaced.length ? `, replacing ${applied.replaced.map(x => x.name).join(' and ')} (they end on ${dlong(pd(start))})` : ''}`;
     }
     await S.db.doc('compare/' + id).set({...cmpDoc(c), status: 'applied', chosen: pid, applied, updatedAt: at, createdAt: c.createdAt || at});
-    const RY = c.rory || {}, costTxt = r.diff < -.005 ? `saves ${money(-r.diff)} a month` : r.diff > .005 ? `${money(r.diff)} a month more` : 'same cost';
-    await logChange('decision', `Agreed by Thiago and Rory (Compare, ${c.name}; Rory’s yes recorded ${RY.answeredAt ? cmpWhen(new Date(RY.answeredAt)) : ''}${RY.said ? `: “${RY.said}”` : ''}): ${what}. ${costTxt.replace(/^./, x => x.toUpperCase())}. Income promised ${pctTxt(E.before.pct)} → ${pctTxt(r.cAfter.pct)}.`, {cmp: id, step: 'apply', rory: 'yes', short: `Applied: ${c.name} · ${p.name} (${costTxt})`});
+    const RY = cmpRory(c) || {}, costTxt = r.diff < -.005 ? `saves ${money(-r.diff)} a month` : r.diff > .005 ? `${money(r.diff)} a month more` : 'same cost';
+    await logChange('decision', `Agreed by Thiago and Rory (Compare, ${c.name}; Rory’s yes, from his account, ${RY.answeredAt ? cmpWhen(new Date(RY.answeredAt)) : ''}${RY.said ? `: “${RY.said}”` : ''}): ${what}. ${costTxt.replace(/^./, x => x.toUpperCase())}. Income promised ${pctTxt(E.before.pct)} → ${pctTxt(r.cAfter.pct)}.`, {cmp: id, step: 'apply', rory: 'yes', short: `Applied: ${c.name} · ${p.name} (${costTxt})`});
     toast('Applied'); render();
   } catch (e) { writeErr(e); }
 }
@@ -5006,8 +5014,8 @@ function cmpTodos(){   // a free trial about to turn into a bill
     out.push({st: 'warn', txt: `Free trial: ${c.name} ends ${dl === 0 ? 'today' : `${fWD.format(d)} ${dshort(d)}`}. If we don’t want it, cancel it with them before then and tap “We cancelled it”. If nobody cancels, ${b.name} stays as a ${money(b.amount)} bill.`, act: 'cmpTrialCancel', id: c.id, btn: 'We cancelled it'});
   }
   for (const c of S.compare){   // the decision with Rory: waiting for him, his yes, and the 48 hours
-    if (c.applied) continue; const D = cmpDecision(c, null), R = c.rory; if (!R || !R.asked) continue;
-    if (!R.answer) out.push({st: 'idle', txt: `Waiting for Rory’s answer about ${c.name} · ${R.planName}. Talk to him, then write what he said in Plan → Compare.`, to: 'compare', btn: 'Open'});
+    if (c.applied) continue; const D = cmpDecision(c, null), R = cmpRory(c); if (!R || !R.asked) continue;
+    if (!R.answer) out.push({st: 'idle', txt: `Waiting for Rory’s answer about ${c.name} · ${R.planName}. He answers in his own app; it shows here as soon as he does.`, to: 'compare', btn: 'Open'});
     else if (R.answer === 'yes'){ const till = R.diff > .005 ? Date.parse(R.asked) + CMP_WAIT_H * 3600e3 : 0; out.push({st: 'idle', txt: Date.now() < till ? `Rory said yes to ${c.name} · ${R.planName}. It can be applied from ${cmpWhen(new Date(till))}: 48 hours to sleep on it.` : `Rory said yes to ${c.name} · ${R.planName}: apply it in Plan → Compare when you’re ready.`, to: 'compare', btn: 'Open'}); }
   }
   { const alone = weekDecisions(weekStartOf(t)).filter(x => x.kind !== 'decision' && x.rory === 'no');   // changes made without Rory: they're in his report
@@ -5636,7 +5644,7 @@ function vHealth(){
   </div>`;
 }
 /* ---------- backup: everything in the shared store, in one file ---------- */
-const DATA_COLLS = ['bills', 'cardlog', 'spending', 'wishlist', 'changelog', 'weeks', 'wise', 'checks', 'klarna', 'loans', 'assets', 'moves', 'compare', 'prep'];   // every collection the page uses: loaded on open and saved in the backup. A new feature's collection goes here, and nowhere else
+const DATA_COLLS = ['bills', 'cardlog', 'spending', 'wishlist', 'changelog', 'weeks', 'wise', 'checks', 'klarna', 'loans', 'assets', 'moves', 'compare', 'answers', 'prep'];   // every collection the page uses: loaded on open and saved in the backup. A new feature's collection goes here, and nowhere else
 const BK_COLLS = DATA_COLLS.filter(k => k !== 'weeks');
 function backupData(){
   const strip = o => { const x = {...o}; return x; };
@@ -6002,13 +6010,18 @@ function advisor(){
 }
 /* the wishlist: each want gets a verdict from the whole picture */
 const WPRIO = {1: 'Must have', 2: 'Would help', 3: 'Just want it'};
+const wishNeedsRory = w => w.kind !== 'need' && num(w.price) > (num(st().ruleThreshold) || 20);   // a want over the limit waits for Rory's yes, from his own account
+function wishAsk(w){ if (!wishNeedsRory(w)) return null; const asked = w.asked || w.addedAt, A = roryAns('wish', w.id, asked); return {asked, answer: A ? A.answer : null, said: A ? A.said : '', answeredAt: A ? A.at : null}; }
 function wishVerdict(w, AD){
   AD = AD || advisor(); const price = num(w.price), hrs = num(st().coolHours) || 48, th = num(st().ruleThreshold) || 20;
   const ageH = (Date.now() - Date.parse(w.addedAt || 0)) / 3600000, cw = num(st().cardWeekly);
   const debtDays = cw > 0 && AD && AD.bal > 0 ? Math.max(1, Math.round(price / cw * 7)) : 0;
   const cost = debtDays ? ` Bought on the card instead, it would add about ${debtDays} day${debtDays > 1 ? 's' : ''} of card debt.` : '';
   if (!AD) return {st: 'idle', v: 'Set up first', why: 'Add the incomes in Settings so the advisor can judge it.'};
-  if (w.told !== 'yes') return {st: 'warn', v: 'Tell Rory first', why: `Nothing is bought before Rory knows (rule 4). Then the advisor gives its answer.${cost}`};
+  const RQ = wishAsk(w);
+  if (RQ && RQ.answer === 'no') return {st: 'bad', v: 'Rory said no', why: `“${RQ.said}”. Drop it, or ask him again in a week if something changes.`};
+  if (RQ && !RQ.answer) return {st: 'warn', v: 'Waiting for Rory', why: `Wants over ${money(th)} wait for Rory’s yes, from his own app (rule 4), and ${hrs} hours (rule 5). Then the advisor gives its answer.${cost}`};
+  if (!RQ && w.told !== 'yes') return {st: 'warn', v: 'Tell Rory first', why: `Nothing is bought before Rory knows (rule 4). Then the advisor gives its answer.${cost}`};
   const need = w.kind === 'need', weekly = Math.max(0, AD.wantsWeek), weeks = weekly > 0 ? Math.ceil(Math.max(0, price - AD.allowance) / weekly) : null;
   const by = pd(w.by), readyOn = weeks != null ? addDays(today(), weeks * 7) : null;
   if (need){
@@ -6020,18 +6033,25 @@ function wishVerdict(w, AD){
   if (AD.mode === 'tighten') return {st: 'bad', v: 'Stay away for now', why: `We’re in a tighten week: ${AD.red.join('; ')}. Wants wait until the money is steady again.${cost}`};
   const big = AD.bal > 0 && price >= Math.max(100, 2 * Math.max(1, AD.fl.free));
   if (big && w.prio !== '1') return {st: 'bad', v: 'Stay away until the card is at €0', why: `It’s ${money(price)}, more than two weeks of free money, while the card still owes ${money(AD.bal)}${AD.pr && AD.pr.payoff ? ` (clear by ${dlong(AD.pr.payoff)})` : ''}. Every euro here keeps the debt longer.${cost} Back on the list once the card is clear.`};
-  if (price <= AD.allowance) return {st: 'ok', v: 'OK to buy this week', why: `It fits this week’s wants money (${money(AD.allowance)}), Rory knows, and it waited. Pay from the Joint account, never the card, and log it.`};
+  if (price <= AD.allowance) return {st: 'ok', v: 'OK to buy this week', why: `It fits this week’s wants money (${money(AD.allowance)}), ${RQ ? 'Rory said yes' : 'Rory knows'}, and it waited. Pay from the Joint account, never the card, and log it.`};
   if (weeks != null && weeks <= (w.prio === '1' ? 12 : 8)) return {st: 'warn', v: `Save for it: ${weeks} week${weeks > 1 ? 's' : ''}`, why: `Keep about ${money(weekly)} of each week’s wants money for it and it’s yours around ${dlong(readyOn)}, with no debt.${by && readyOn > by ? ` That’s after ${dshort(by)}: the date may have to move.` : ''}`};
   return {st: 'bad', v: 'Not now', why: `It would take ${weeks == null ? 'more free money than we have' : `${weeks} weeks of all our wants money`}. ${AD.bal > 0 ? 'The card comes first.' : 'Wait for a pay rise, or a payment that ends.'}${cost}`};
 }
+const wishAskAgainOk = w => { const q = wishAsk(w); return !!(q && q.answer === 'no' && Date.now() >= Date.parse(q.answeredAt) + CMP_REASK_D * 864e5); };   // after Rory's no, a week before asking again
 function wishItems(){ return S.wishlist.filter(w => !['dropped', 'bought'].includes(w.status)).sort((a, b) => String(a.prio || 2).localeCompare(String(b.prio || 2)) || (a.addedAt || '').localeCompare(b.addedAt || '')); }
+async function wishPut(doc, how){   // onto the wishlist; a want over the limit goes to Rory as a question at the same time
+  const ask = wishNeedsRory(doc); if (ask) doc.asked = doc.addedAt;
+  const r = await S.db.collection('wishlist').add(doc), what = `${doc.what} ${money(doc.price)}`;
+  if (ask) await logChange('decision', `On the wishlist, waiting for Rory’s yes from his app: ${what}${how ? ` (${how})` : ''}`, {wish: r.id, step: 'ask', short: `Thiago asks: ${doc.what}, ${money(doc.price)}`});
+  else await logChange('wishlist', `On the wishlist: ${what}${how ? ` (${how}${doc.told === 'yes' ? ', Rory knows' : ', Rory doesn’t know yet'})` : ''}`);
+}
 function wishRow(w, AD, compact){
   const vd = wishVerdict(w, AD);
   return `<div class="wish2"><div class="wh"><b>${esc(w.what || 'Item')}</b><span class="mono">${money(w.price)}</span></div>
     <div class="wm">${WHO[w.who] ? `<span class="who" style="--c:${WHO_C[w.who]}">${WHO[w.who]}</span>` : ''}<span class="chip idle">${w.kind === 'need' ? 'Need' : 'Want'}</span>${w.prio ? `<span class="chip idle">${esc(WPRIO[w.prio] || '')}</span>` : ''}${w.by ? `<span class="chip idle">by ${dshort(pd(w.by))}</span>` : ''}</div>
     <div class="verdict ${vd.st}"><h3>${vd.st === 'ok' ? '✓ ' : vd.st === 'bad' ? '✕ ' : '! '}${esc(vd.v)}</h3>${compact ? '' : `<p>${esc(vd.why)}</p>`}</div>
     ${!compact && w.note ? `<p class="mut" style="font-size:.88rem">${esc(w.note)}</p>` : ''}
-    ${S.canWrite && !compact ? `<div class="actions">${w.told !== 'yes' ? `<button class="btn small" data-act="wishTold" data-id="${esc(w.id)}">Rory knows now</button>` : ''}${vd.st === 'ok' ? `<button class="btn small strong" data-act="wishBought" data-id="${esc(w.id)}">Bought it: log ${money(w.price)}</button>` : ''}<button class="btn small" data-act="wishDrop" data-id="${esc(w.id)}">Drop it</button></div>` : ''}</div>`;
+    ${S.canWrite && !compact ? `<div class="actions">${!wishNeedsRory(w) && w.told !== 'yes' ? `<button class="btn small" data-act="wishTold" data-id="${esc(w.id)}">Rory knows now</button>` : ''}${wishAskAgainOk(w) ? `<button class="btn small" data-act="wishAskAgain" data-id="${esc(w.id)}">Ask Rory again</button>` : ''}${vd.st === 'ok' ? `<button class="btn small strong" data-act="wishBought" data-id="${esc(w.id)}">Bought it: log ${money(w.price)}</button>` : ''}<button class="btn small" data-act="wishDrop" data-id="${esc(w.id)}">Drop it</button></div>` : ''}</div>`;
 }
 function wishPanel(AD, opts = {}){
   const list = wishItems(), f = S.f.wish || {}, done = S.wishlist.filter(w => ['dropped', 'bought'].includes(w.status)).sort((a, b) => (b.decidedAt || '').localeCompare(a.decidedAt || '')).slice(0, 6);
@@ -6720,16 +6740,16 @@ document.addEventListener('click', async e => {
         if (x) await logChange('spending', `Deleted the purchase ${x.what} ${money(x.amount)} of ${dshort(pd(x.date))}${ch ? ' and its upcoming card charge' : ''}`); toast('Deleted'); } catch (er) { writeErr(er); } } break;
     case 'checkClear': S.f.check = {what: '', price: '', paidFrom: 'joint', who: '', need: '', told: ''}; render(); break;
     case 'checkLog': { const c = S.f.check; await spendSave({date: iso(today()), what: c.what || 'Purchase', amount: c.price, cat: '', paidFrom: c.paidFrom, who: c.who, kind: c.need === 'yes' ? 'need' : 'planned', told: 'before', note: ''}); S.f.check = {what: '', price: '', paidFrom: 'joint', who: '', need: '', told: ''}; render(); break; }
-    case 'wishAdd': { if (!needDb()) break; const c = S.f.check; try { await S.db.collection('wishlist').add({what: String(c.what || 'Item').trim(), price: Math.round(num(c.price) * 100) / 100, who: c.who || '', kind: c.need === 'yes' ? 'need' : 'want', told: c.told === 'yes' ? 'yes' : 'no', prio: '2', addedAt: new Date().toISOString(), status: 'waiting'}); await logChange('wishlist', `On the wishlist: ${String(c.what || 'Item').trim()} ${money(c.price)}`); S.f.check = {what: '', price: '', paidFrom: 'joint', who: '', need: '', told: ''}; toast('On the wishlist. Decide later.'); render(); } catch (er) { writeErr(er); } break; }
+    case 'wishAdd': { if (!needDb()) break; const c = S.f.check; try { await wishPut({what: String(c.what || 'Item').trim(), price: Math.round(num(c.price) * 100) / 100, who: c.who || '', kind: c.need === 'yes' ? 'need' : 'want', told: c.told === 'yes' ? 'yes' : 'no', prio: '2', addedAt: new Date().toISOString(), status: 'waiting'}); S.f.check = {what: '', price: '', paidFrom: 'joint', who: '', need: '', told: ''}; toast('On the wishlist. Decide later.'); render(); } catch (er) { writeErr(er); } break; }
     case 'wishSave': { const f = S.f.wish || {}, price = Math.round(num(f.price) * 100) / 100; S.errAt = 'wish';
       if (!String(f.what || '').trim()) { S.err = 'Say what it is.'; render(); break; }
       if (!(price > 0)) { S.err = 'Enter the price.'; render(); break; }
       if (!WHO[f.who]) { S.err = 'Choose who it’s for.'; render(); break; }
       if (!['need', 'want'].includes(f.kind)) { S.err = 'Need or want?'; render(); break; }
-      if (!['yes', 'no'].includes(f.told)) { S.err = 'Does Rory know?'; render(); break; }
+      if (!(f.kind === 'want' && price > (num(st().ruleThreshold) || 20)) && !['yes', 'no'].includes(f.told)) { S.err = 'Does Rory know?'; render(); break; }
       if (!needDb()) break; S.err = '';
-      try { const doc = {what: String(f.what).trim(), price, who: f.who, kind: f.kind, prio: WPRIO[f.prio] ? f.prio : '2', told: f.told, by: pd(f.by) ? f.by : '', note: String(f.note || '').trim(), addedAt: new Date().toISOString(), status: 'waiting'};
-        await S.db.collection('wishlist').add(doc); await logChange('wishlist', `On the wishlist: ${doc.what} ${money(price)} (${WHO[doc.who]}, ${doc.kind}, ${WPRIO[doc.prio].toLowerCase()}${doc.told === 'yes' ? ', Rory knows' : ', Rory doesn’t know yet'})`);
+      try { const doc = {what: String(f.what).trim(), price, who: f.who, kind: f.kind, prio: WPRIO[f.prio] ? f.prio : '2', told: f.told === 'yes' ? 'yes' : 'no', by: pd(f.by) ? f.by : '', note: String(f.note || '').trim(), addedAt: new Date().toISOString(), status: 'waiting'};
+        await wishPut(doc, `${WHO[doc.who]}, ${doc.kind}, ${WPRIO[doc.prio].toLowerCase()}`);
         S.f.wish = {}; S.wishOpen = false; toast('On the wishlist'); render(); } catch (er) { writeErr(er); } break; }
     case 'wishTold': { if (!needDb()) break; const w = S.wishlist.find(y => y.id === b.dataset.id); if (!w) break; try { await S.db.doc('wishlist/' + w.id).update({told: 'yes'}); await logChange('wishlist', `Rory knows about ${w.what} (${money(w.price)})`); toast('Saved'); } catch (er) { writeErr(er); } break; }
     case 'wishBought': { if (!needDb()) break; const w = S.wishlist.find(y => y.id === b.dataset.id); if (!w) break;
@@ -6806,7 +6826,9 @@ document.addEventListener('click', async e => {
     case 'cmpTrialBill': await cmpTrialBill(b.dataset.id); break;
     case 'cmpUse': { const f = S.f.cmp; if (!f) break; f.use ||= {}; f.use[b.dataset.k] = b.dataset.v; render(); break; }
     case 'cmpAsk': await cmpAsk(b.dataset.k); break;
-    case 'cmpAnswer': await cmpAnswer(b.dataset.v); break;
+    case 'roryAnswer': await roryAnswer(b.dataset.k, b.dataset.id, b.dataset.v); break;
+    case 'wishAskAgain': { if (!needDb()) break; const w = S.wishlist.find(y => y.id === b.dataset.id); if (!w || !wishAskAgainOk(w)) break; const at = new Date().toISOString();
+      try { await S.db.doc('wishlist/' + w.id).update({asked: at}); await logChange('decision', `Asked Rory again (wishlist): ${w.what} ${money(w.price)}`, {wish: w.id, step: 'ask', short: `Thiago asks again: ${w.what}, ${money(w.price)}`}); toast('Rory sees it at the top of his report'); } catch (er) { writeErr(er); } break; }
     case 'enSwitchCancel': await enSwitchCancel(); break;
     case 'cmpApply': await cmpApply(b.dataset.k); break;
     case 'cmpUndo': await cmpUndo(b.dataset.id); break;
@@ -6832,7 +6854,7 @@ render();
   const db = await useCap('db');
   if (!db){ S.noDb = true; render(); return; }
   S.db = db;
-  useCap('user').then(async u => { if (!u) return; try { const c = await u.can('data.write'); if (c === false){ S.canWrite = false; render(); } } catch (e) {} });
+  useCap('user').then(async u => { if (!u) return; try { const c = await u.can('data.write'); if (c === false){ S.canWrite = false; render(); } } catch (e) {} try { if (!S.canWrite && await u.can('answer.own') === true){ S.canAnswer = true; render(); } } catch (e) {} });   // Rory's own account can answer Thiago's questions, nothing else
   const onErr = e => { console.warn(e); if (e && e.code === 'revoked'){ S.noDb = true; render(); } };
   db.doc('config/settings').onSnapshot(s => { S.settings = s.exists ? {...s.data()} : {}; S.got.settings = true; sched(); }, onErr);
   db.doc('config/plan').onSnapshot(s => { S.plan = s.exists ? {...s.data()} : {}; S.got.plan = true; sched(); }, onErr);

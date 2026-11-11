@@ -42,23 +42,40 @@
   const watch = (coll, id, cb) => { const s = {coll, id, cb}; subs.push(s); setTimeout(() => cb(snap(coll, id)), 0); return () => { const i = subs.indexOf(s); if (i >= 0) subs.splice(i, 1); }; };
 
   async function loadAll(){
-    const rows = [];
-    for (let a = 0; ; a += 1000){
-      const {data, error} = await client().from('docs').select('coll,id,data,updated_at').order('coll').order('id').range(a, a + 999);
-      if (error) throw fail(error);
-      rows.push(...data);
-      if (data.length < 1000) break;
-    }
+    const all = async (table, cols, order) => {
+      const rows = [];
+      for (let a = 0; ; a += 1000){
+        let q = client().from(table).select(cols);
+        for (const o of order) q = q.order(o);
+        const {data, error} = await q.range(a, a + 999);
+        if (error) throw fail(error);
+        rows.push(...data);
+        if (data.length < 1000) break;
+      }
+      return rows;
+    };
+    const docs = await all('docs', 'coll,id,data,updated_at', ['coll', 'id']), answers = await all('answers', 'id,data,at', ['id']);
     for (const k of Object.keys(store)) delete store[k];
-    for (const r of rows) put(r.coll, r.id, r.data, r.updated_at);
+    for (const r of docs) put(r.coll, r.id, r.data, r.updated_at);
+    store.answers = {};
+    for (const r of answers) put('answers', r.id, r.data, r.at);
   }
 
   /* ---------- the database, as the page knows it ---------- */
+  const readOnly = async () => { throw fail({code: '42501', message: 'read only'}); };
   const db = {
     collection: coll => ({
       onSnapshot: cb => watch(coll, null, cb),
       add: async doc => {
         const id = newId(), data = copy(doc);
+        if (coll === 'answers'){   // Rory's answers: their own table, which only his account can add to (the server stamps the time)
+          const {data: r, error} = await client().from('answers').insert({id, data}).select('data,at');
+          if (error) throw fail(error);
+          put(coll, id, r[0].data, r[0].at); fire(coll, id);
+          const {data: h} = await client().from('docs').select('coll,id,data,updated_at').eq('coll', 'changelog').eq('id', 'ans' + id);   // the History line the database wrote for it
+          if (h && h[0]){ put('changelog', h[0].id, h[0].data, h[0].updated_at); fire('changelog', h[0].id); }
+          return {id};
+        }
         const {data: r, error} = await client().from('docs').insert({coll, id, data}).select('updated_at');
         if (error) throw fail(error);
         put(coll, id, data, r && r[0] && r[0].updated_at); fire(coll, id);
@@ -67,6 +84,7 @@
     }),
     doc: path => {
       const [coll, id] = path.split('/');
+      if (coll === 'answers') return {onSnapshot: cb => watch(coll, id, cb), set: readOnly, update: readOnly, delete: readOnly};   // an answer is never changed or deleted
       return {
         onSnapshot: cb => watch(coll, id, cb),
         set: async d => {
@@ -97,6 +115,9 @@
       if (p.eventType === 'DELETE'){ const o = p.old || {}; if (o.coll && o.id){ drop(o.coll, o.id); fire(o.coll, o.id); } return; }
       const n = p.new || {};
       if (n.coll && n.id && put(n.coll, n.id, n.data, n.updated_at)) fire(n.coll, n.id);
+    }).on('postgres_changes', {event: 'INSERT', schema: 'public', table: 'answers'}, p => {
+      const n = p.new || {};
+      if (n.id && put('answers', n.id, n.data, n.at)) fire('answers', n.id);
     }).subscribe();
     const refresh = async () => { try { await loadAll(); fire(null); } catch (e) {} };   // after the phone slept, read everything again
     document.addEventListener('visibilitychange', () => {
@@ -225,6 +246,6 @@
     if (name === 'downloads') return downloads;
     if (name !== 'db' && name !== 'user' && name !== 'account') return null;
     await (ready ||= start());
-    return name === 'db' ? db : name === 'account' ? account : {can: async cap => cap === 'data.write' && me.role === 'editor'};
+    return name === 'db' ? db : name === 'account' ? account : {can: async cap => cap === 'data.write' ? me.role === 'editor' : cap === 'answer.own' ? me.role === 'viewer' : false};
   }};
 })();
