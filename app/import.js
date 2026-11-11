@@ -2,7 +2,7 @@
 // A backup is the .json from Settings → Setup → Download a backup. Bringing one in replaces everything
 // in the app in one go (all or nothing, in the database: doc_import); the page inside Claude isn't touched.
 (async () => {
-  const el = document.getElementById('acct');
+  const el = document.getElementById('app-acct');
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
   const A = await window.claude.use('account'), me = A.me();
   let file = null, armed = false, busy = false, msg = '', bad = false;
@@ -26,25 +26,25 @@
 
   const importPanel = () => {
     const now = A.counts();
-    const rows = file ? Object.entries(byColl(file.docs)).sort().map(([c, n]) => `<div class="kv2"><span>${esc(c)}</span><span class="num">${n} in the file · ${now[c] || 0} now</span></div>`).join('') : '';
+    const rows = file ? Object.entries(byColl(file.docs)).sort().map(([c, n]) => `<div class="app-kv"><span>${esc(c)}</span><span class="num">${n} in the file · ${now[c] || 0} now</span></div>`).join('') : '';
     const btn = !file ? '' : busy ? `<button class="btn strong" disabled>Bringing it in…</button>`
       : `<button class="btn ${armed ? 'danger' : 'strong'}" data-a="go">${armed ? `Tap again: replace everything with these ${file.docs.length} items` : 'Replace everything with this backup'}</button>${armed ? '<button class="btn" data-a="cancel">Cancel</button>' : ''}`;
-    return `<section class="panel acct"><header><h2>Bring in a backup</h2></header>
-      <p class="gnote">The .json from Settings → Setup → Download a backup. It replaces everything in this app with the backup. The page inside Claude isn’t touched.</p>
+    return `<section class="panel app-acct"><header><h2>Bring in a backup</h2></header>
+      <p class="app-note">The .json from Settings → Setup → Download a backup. It replaces everything in this app with the backup. The page inside Claude isn’t touched.</p>
       <input type="file" accept=".json,application/json" data-a="file" aria-label="Choose the backup file">
-      ${file ? `<div class="kv2"><span>Backup saved</span><b>${esc(when(file.savedAt))}</b></div>${rows}` : ''}
-      ${msg ? `<p class="gmsg${bad ? ' bad' : ''}" role="status">${esc(msg)}</p>` : ''}
+      ${file ? `<div class="app-kv"><span>Backup saved</span><b>${esc(when(file.savedAt))}</b></div>${rows}` : ''}
+      ${msg ? `<p class="app-msg${bad ? ' bad' : ''}" role="status">${esc(msg)}</p>` : ''}
       ${btn}</section>`;
   };
 
   const draw = () => {
-    el.innerHTML = `<section class="panel acct"><header><h2>Signed in</h2></header>
-      <div class="kv2"><span>Who</span><b>${esc(me.name)}</b></div>
-      <div class="kv2"><span>Email</span><span>${esc(me.email)}</span></div>
-      <div class="kv2"><span>In the app</span><span>${me.role === 'editor' ? 'Can change everything' : 'Can read, never change'}</span></div>
+    el.innerHTML = `<section class="panel app-acct"><header><h2>Signed in</h2></header>
+      <div class="app-kv"><span>Who</span><b>${esc(me.name)}</b></div>
+      <div class="app-kv"><span>Email</span><span>${esc(me.email)}</span></div>
+      <div class="app-kv"><span>In the app</span><span>${me.role === 'editor' ? 'Can change everything' : 'Can read, never change'}</span></div>
       <a class="btn strong" href="./">Open Week by Week</a>
       <button class="btn" data-a="out">Sign out</button></section>
-      ${me.role === 'editor' ? importPanel() : '<section class="panel"><p class="gnote">Only Thiago can bring in a backup.</p></section>'}`;
+      ${me.role === 'editor' ? importPanel() : '<section class="panel"><p class="app-note">Only Thiago can bring in a backup.</p></section>'}`;
   };
 
   el.addEventListener('change', async e => {

@@ -39,25 +39,31 @@ with sync_playwright() as p:
         ctx = br.new_context(viewport={'width': width, 'height': 860}, color_scheme='dark' if dark else 'light')
         ctx.add_init_script('window.__SEED__ = ' + json.dumps(seed) + '; window.__ROLE__ = ' + json.dumps(role) + ';')
         ctx.route('**/*', lambda r: r.continue_() if r.request.url.startswith(BASE) else r.abort())     # nothing leaves this machine
-        ctx.route('**/app/config.js', lambda r: r.fulfill(body=FAKE, content_type='text/javascript'))   # the fake Supabase instead of the real one (the later route wins)
+        ctx.route('**/app/config.js*', lambda r: r.fulfill(body=FAKE, content_type='text/javascript'))   # the fake Supabase instead of the real one (the later route wins)
         pg = ctx.new_page(); errs = []
         pg.on('pageerror', lambda e: errs.append(str(e)))
         pg.goto(BASE + path + hash); pg.wait_for_timeout(1200)
         return ctx, pg, errs
     ev = lambda pg, js: pg.evaluate(js)
-    gate = lambda pg: ev(pg, "() => { const g = document.getElementById('gate'); return g ? g.innerText : ''; }")
+    gate = lambda pg: ev(pg, "() => { const g = document.getElementById('app-gate'); return g ? g.innerText : ''; }")
     sideways = lambda pg: ev(pg, "() => document.documentElement.scrollWidth > window.innerWidth + 1")
     shot = lambda pg, n: A.shots and pg.screenshot(path=os.path.join(A.shots, n + '.png'), full_page=False)
     if A.shots: os.makedirs(A.shots, exist_ok=True)
 
+    # 0. the app's own styles use names the page never uses, so they can't change a screen of the page
+    import re as _re
+    css = open(os.path.join(ROOT, 'app/app.css'), encoding='utf-8').read(); page = open(os.path.join(ROOT, 'src/week-by-week.html'), encoding='utf-8').read()
+    ours = {n for n in _re.findall(r'\.([A-Za-z][\w-]*)', _re.sub(r'/\*.*?\*/', '', css, flags=_re.S))} - {'btn', 'bad'}
+    clash = sorted(n for n in ours if _re.search(r'(?<![\w-])' + _re.escape(n) + r'(?![\w-])', page))
+    check('the app’s own style names never clash with the page’s', not clash and all(n.startswith('app-') for n in ours), clash or sorted(n for n in ours if not n.startswith('app-')))
     # 1. signed out: the sign-in screen, a wrong password, then Thiago signs in
     ctx, pg, errs = open_as('none')
     check('signed out: the sign-in screen shows', 'Sign in' in gate(pg) and 'Password' in gate(pg), gate(pg))
     check('signed out: nothing of ours is loaded', ev(pg, "() => (S.bills || []).length === 0 && !S.db"))
     shot(pg, 'signin-light')
-    pg.fill('#gEmail', 'thiago@example.test'); pg.fill('#gPass', 'wrong-password'); pg.click('.gform button[type=submit]'); pg.wait_for_timeout(500)
+    pg.fill('#gEmail', 'thiago@example.test'); pg.fill('#gPass', 'wrong-password'); pg.click('.app-form button[type=submit]'); pg.wait_for_timeout(500)
     check('a wrong password is refused with a clear line', 'don’t match' in gate(pg), gate(pg))
-    pg.fill('#gPass', 'test-password-1'); pg.click('.gform button[type=submit]'); pg.wait_for_timeout(1200)
+    pg.fill('#gPass', 'test-password-1'); pg.click('.app-form button[type=submit]'); pg.wait_for_timeout(1200)
     check('Thiago signs in: the sign-in screen goes', gate(pg) == '', gate(pg))
     check('Thiago sees his iPhone-look page with our data', ev(pg, "() => S.canWrite && document.documentElement.dataset.look === 'ios' && S.bills.length === %d" % len(seed.get('bills', {}))))
     check('Today draws clean', not any(s in ev(pg, "() => document.getElementById('view').innerText") for s in ['Something went wrong', 'NaN', 'Invalid Date', 'store isn’t available']))
@@ -83,6 +89,15 @@ with sync_playwright() as p:
     check('Thiago: a delete is saved and shows', r['del'], r)
     check('Thiago: changing something that isn’t there is refused', r['missing'], r)
     check('the writes went to the database in order', r['writes'] == 'update,set,add,delete', r['writes'])
+    TABS = [('today', None), ('week', None), ('pay', None)] + [('money', x) for x in ['balance', 'bills', 'energy', 'debts', 'spending', 'transfers']] + \
+           [('plan', x) for x in ['plan', 'advisor', 'budget', 'compare', 'ready', 'trends', 'million']] + [('settings', x) for x in ['setup', 'rules', 'health', 'history']]
+    bad_tabs = []
+    for tab, sub in TABS:   # with the app's own stylesheet loaded, every screen still draws as the page does (nothing of ours covers it)
+        r = ev(pg, f"""() => {{ S.tab = '{tab}'; S.todayOpen = ''; {f"S.sub.{tab} = '{sub}';" if sub else ''} render();
+          const cover = [...document.querySelectorAll('#view *')].filter(e => getComputedStyle(e).position === 'fixed' && !e.closest('.ios-sheet') && e.getBoundingClientRect().height > innerHeight / 2).length;
+          return {{cover, title: !!document.querySelector('#view .ios-title h1'), text: document.getElementById('view').innerText.length}}; }}""")
+        if r['cover'] or not r['title'] or r['text'] < 40: bad_tabs.append(f'{tab}/{sub}: {r}')
+    check('every screen draws normally inside the app (the app’s styles never cover or change a screen)', not bad_tabs, bad_tabs[:4])
     check('Thiago: Settings → Setup draws (backup panel)', 'Backup' in ev(pg, "() => { S.tab = 'settings'; S.sub.settings = 'setup'; render(); return document.getElementById('view').innerText; }"))
     ctx.close()
 
@@ -105,7 +120,7 @@ with sync_playwright() as p:
 
     # 4. a stranger who somehow has an account is turned away
     ctx, pg, errs = open_as('none')
-    pg.fill('#gEmail', 'stranger@example.test'); pg.fill('#gPass', 'test-password-3'); pg.click('.gform button[type=submit]'); pg.wait_for_timeout(1000)
+    pg.fill('#gEmail', 'stranger@example.test'); pg.fill('#gPass', 'test-password-3'); pg.click('.app-form button[type=submit]'); pg.wait_for_timeout(1000)
     check('a stranger is turned away and sees nothing', 'isn’t one of the two' in gate(pg) and ev(pg, "() => !S.db"), gate(pg))
     ctx.close()
 
@@ -116,9 +131,9 @@ with sync_playwright() as p:
     ctx, pg, errs = open_as('none', hash=f'#access_token={ac}&expires_in=3600&refresh_token=r&token_type=bearer&type=invite')
     check('invite link: “choose your password” shows', 'Choose your password' in gate(pg), gate(pg))
     shot(pg, 'invite-light')
-    pg.fill('#gNew', 'short'); pg.fill('#gNew2', 'short'); pg.click('.gform button[type=submit]'); pg.wait_for_timeout(300)
+    pg.fill('#gNew', 'short'); pg.fill('#gNew2', 'short'); pg.click('.app-form button[type=submit]'); pg.wait_for_timeout(300)
     check('invite link: a short password is refused', '10 characters' in gate(pg), gate(pg))
-    pg.fill('#gNew', 'a-good-long-password'); pg.fill('#gNew2', 'a-good-long-password'); pg.click('.gform button[type=submit]'); pg.wait_for_timeout(1200)
+    pg.fill('#gNew', 'a-good-long-password'); pg.fill('#gNew2', 'a-good-long-password'); pg.click('.app-form button[type=submit]'); pg.wait_for_timeout(1200)
     check('invite link: after the password Rory is in, on his report', gate(pg) == '' and ev(pg, "() => !S.canWrite && document.body.classList.contains('rorymode')"), gate(pg))
     check('invite link: the address is cleaned (no token left in it)', 'access_token' not in pg.url, pg.url)
     ctx.close()
@@ -126,7 +141,7 @@ with sync_playwright() as p:
     # 6. the account page: Thiago brings in a backup (two taps); Rory can't
     bk = os.path.join('/tmp', 'wbw_smoke_backup.json'); json.dump(B, open(bk, 'w'))
     ctx, pg, errs = open_as('editor', 'import.html')
-    txt = lambda: ev(pg, "() => document.getElementById('acct').innerText")
+    txt = lambda: ev(pg, "() => document.getElementById('app-acct').innerText")
     check('account page: who is signed in', 'Thiago' in txt() and 'Can change everything' in txt(), txt())
     pg.set_input_files('input[type=file]', bk); pg.wait_for_timeout(400)
     check('account page: the file is read and counted', 'in the file' in txt() and 'Replace everything' in txt(), txt())
@@ -155,7 +170,7 @@ with sync_playwright() as p:
                 if sideways(pg): bad.append(f'{path} {w}px {"dark" if dark else "light"}: scrolls sideways')
                 if path == 'index.html':
                     icon = ev(pg, "() => document.querySelector('link[rel=apple-touch-icon]').getAttribute('href')")
-                    mark = ev(pg, "() => document.querySelector('.gmark img').currentSrc.split('/').pop()")
+                    mark = ev(pg, "() => document.querySelector('.app-mark img').currentSrc.split('/').pop()")
                     want = 'icon-dark-180.png' if dark else 'icon-180.png'
                     if icon != want or mark != want: bad.append(f'{"dark" if dark else "light"}: icon {icon}, mark {mark}, wanted {want}')
                 if errs: bad.append(f'{path}: {errs[0]}')

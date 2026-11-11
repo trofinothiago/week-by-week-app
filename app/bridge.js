@@ -129,21 +129,21 @@
 
   /* ---------- signing in (the page's own iPhone look) ---------- */
   const gate = (sub, body) => {
-    let g = document.getElementById('gate');
-    if (!g){ g = document.createElement('div'); g.id = 'gate'; g.className = 'gate'; document.body.appendChild(g); }
-    g.innerHTML = `<div class="wrap"><div class="ios-title"><div class="gbrand">${MARK}<div><h1>Week by Week</h1><p>${esc(sub)}</p></div></div></div><div class="stack">${body}</div></div>`;
+    let g = document.getElementById('app-gate');
+    if (!g){ g = document.createElement('div'); g.id = 'app-gate'; g.className = 'app-gate'; document.body.appendChild(g); }
+    g.innerHTML = `<div class="wrap"><div class="ios-title"><div class="app-brand">${MARK}<div><h1>Week by Week</h1><p>${esc(sub)}</p></div></div></div><div class="stack">${body}</div></div>`;
     return g;
   };
-  const MARK = '<picture class="gmark"><source srcset="icon-dark-180.png" media="(prefers-color-scheme: dark)"><img src="icon-180.png" alt="" width="56" height="56"></picture>';
-  const ungate = () => { const g = document.getElementById('gate'); if (g) g.remove(); };
-  const say = (g, t, bad) => { const m = g.querySelector('.gmsg'); m.textContent = t; m.classList.toggle('bad', !!bad); };
+  const MARK = '<picture class="app-mark"><source srcset="icon-dark-180.png" media="(prefers-color-scheme: dark)"><img src="icon-180.png" alt="" width="56" height="56"></picture>';
+  const ungate = () => { const g = document.getElementById('app-gate'); if (g) g.remove(); };
+  const say = (g, t, bad) => { const m = g.querySelector('.app-msg'); m.textContent = t; m.classList.toggle('bad', !!bad); };
   const field = (id, label, type, ac) => `<div class="fld"><label for="${id}">${label}</label><input id="${id}" type="${type}" autocomplete="${ac}" required></div>`;
 
   const askSignIn = note => new Promise(done => {
-    const g = gate('Sign in', `<section class="panel"><form class="gform" novalidate>
-      ${note ? `<p class="gnote">${esc(note)}</p>` : ''}
+    const g = gate('Sign in', `<section class="panel"><form class="app-form" novalidate>
+      ${note ? `<p class="app-note">${esc(note)}</p>` : ''}
       ${field('gEmail', 'Email', 'email', 'username')}${field('gPass', 'Password', 'password', 'current-password')}
-      <p class="gmsg" role="status"></p>
+      <p class="app-msg" role="status"></p>
       <button class="btn strong" type="submit">Sign in</button>
       <button class="btn" type="button" data-g="forgot">Forgot the password?</button></form></section>`);
     const em = g.querySelector('#gEmail'), pw = g.querySelector('#gPass');
@@ -163,10 +163,10 @@
   });
 
   const choosePassword = () => new Promise(done => {
-    const g = gate(LINK === 'invite' ? 'Welcome' : 'New password', `<section class="panel"><form class="gform" novalidate>
-      <p class="gnote">Choose your password. On the iPhone, let it save to the Keychain: next time Face ID fills it in.</p>
+    const g = gate(LINK === 'invite' ? 'Welcome' : 'New password', `<section class="panel"><form class="app-form" novalidate>
+      <p class="app-note">Choose your password. On the iPhone, let it save to the Keychain: next time Face ID fills it in.</p>
       ${field('gNew', 'New password (10 characters or more)', 'password', 'new-password')}${field('gNew2', 'Type it again', 'password', 'new-password')}
-      <p class="gmsg" role="status"></p>
+      <p class="app-msg" role="status"></p>
       <button class="btn strong" type="submit">Save the password</button></form></section>`);
     g.querySelector('form').addEventListener('submit', async e => {
       e.preventDefault();
@@ -203,12 +203,12 @@
           note = 'This account isn’t one of the two in Week by Week.';
           continue;
         }
-        gate('Opening', '<section class="panel"><p class="gnote">Getting our numbers…</p></section>');
+        gate('Opening', '<section class="panel"><p class="app-note">Getting our numbers…</p></section>');
         await loadAll();
         break;
       } catch (e) {
         await new Promise(r => {
-          const g = gate('Can’t reach the data', `<section class="panel"><p class="gnote">Check the connection and try again.</p><button class="btn strong" type="button">Try again</button></section>`);
+          const g = gate('Can’t reach the data', `<section class="panel"><p class="app-note">Check the connection and try again.</p><button class="btn strong" type="button">Try again</button></section>`);
           g.querySelector('button').addEventListener('click', r);
         });
       }
