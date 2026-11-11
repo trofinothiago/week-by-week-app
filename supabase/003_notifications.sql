@@ -138,6 +138,21 @@ $$;
 create function private.money(x numeric) returns text
 language sql immutable set search_path = '' as $$ select '€' || to_char(x, 'FM999,999,990.00') $$;
 
+-- What is due now: the one definition, used by the sender (push_take) and by the wake-up (part 2).
+-- part: 'now' (a test always; the rest outside quiet hours) or 'evening' (chosen for the summary, from before
+-- the last summary time, outside quiet hours). Taken items not confirmed in 5 minutes are due again.
+create function private.push_due(p_now timestamptz) returns table (id bigint, user_id uuid, part text)
+language sql stable security definer set search_path = '' as $$
+  select o.id, o.user_id, case when o.tell = 'test' or coalesce(s.p->>o.tell, 'now') = 'now' then 'now' else 'evening' end
+  from private.push_outbox o
+  cross join lateral (select private.push_prefs_of(o.user_id) as p) s
+  where o.sent_at is null and (o.taken_at is null or o.taken_at < p_now - interval '5 minutes')
+    and (o.tell = 'test' or (not private.push_quiet(s.p, p_now) and (
+         coalesce(s.p->>o.tell, 'now') = 'now'
+         or (s.p->>o.tell = 'evening' and o.made_at < private.push_last_digest(s.p, p_now)))))
+$$;
+revoke all on function private.push_due(timestamptz) from public;
+
 -- For the sender: what is due now, per person: their devices and one or two messages
 -- (everything due right away together; the evening summary on its own). Each item is taken once;
 -- one not confirmed sent in 5 minutes is taken again, up to 3 times.
@@ -145,13 +160,13 @@ create function public.push_take(p_now timestamptz default now()) returns jsonb
 language plpgsql security definer set search_path = '' as $$
 declare
   u record; p jsonb; out jsonb := '[]'::jsonb; msgs jsonb; devs jsonb;
-  ids_now bigint[]; ids_eve bigint[]; dg timestamptz; quiet boolean; t text; b text; cs text;
+  ids_now bigint[]; ids_eve bigint[]; dg timestamptz; t text; b text; cs text;
 begin
   delete from private.push_outbox where sent_at < p_now - interval '30 days';
   update private.push_outbox set sent_at = p_now, status = 'failed'
     where sent_at is null and tries >= 3 and taken_at < p_now - interval '5 minutes';
   for u in select distinct o.user_id from private.push_outbox o where o.sent_at is null loop
-    p := private.push_prefs_of(u.user_id); quiet := private.push_quiet(p, p_now); dg := private.push_last_digest(p, p_now);
+    p := private.push_prefs_of(u.user_id); dg := private.push_last_digest(p, p_now);
     -- what this person turned off is dropped
     update private.push_outbox o set sent_at = p_now, status = 'off'
       where o.user_id = u.user_id and o.sent_at is null and o.tell <> 'test' and coalesce(p->>o.tell, 'now') = 'off';
@@ -163,25 +178,23 @@ begin
       continue;
     end if;
     msgs := '[]'::jsonb;
-    -- right away: a test always; the rest outside quiet hours, all due together in one message
+    -- right away, all due together in one message
     select array_agg(o.id order by o.made_at),
            case when count(*) = 1 then max(o.title)
                 when count(distinct o.tell) = 1 then max(o.title) || ' · ' || count(*)
                 else count(*) || ' updates' end,
            left(case when count(*) = 1 then max(o.body) else string_agg('• ' || o.body, E'\n' order by o.made_at) end, 1500)
       into ids_now, t, b
-      from private.push_outbox o
-      where o.user_id = u.user_id and o.sent_at is null and (o.taken_at is null or o.taken_at < p_now - interval '5 minutes')
-        and (o.tell = 'test' or (coalesce(p->>o.tell, 'now') = 'now' and not quiet));
+      from private.push_outbox o join private.push_due(p_now) d on d.id = o.id
+      where d.user_id = u.user_id and d.part = 'now';
     if ids_now is not null then
       msgs := msgs || jsonb_build_array(jsonb_build_object('title', t, 'body', b, 'tag', 'now-' || ids_now[1], 'url', './'));
     end if;
-    -- the evening summary: everything chosen for it from before the last summary time, outside quiet hours, with totals by category
+    -- the evening summary, with totals by category
     select array_agg(o.id order by o.made_at), left(string_agg('• ' || o.body, E'\n' order by o.made_at), 1500)
       into ids_eve, b
-      from private.push_outbox o
-      where o.user_id = u.user_id and o.sent_at is null and (o.taken_at is null or o.taken_at < p_now - interval '5 minutes')
-        and o.tell <> 'test' and p->>o.tell = 'evening' and o.made_at < dg and not quiet;
+      from private.push_outbox o join private.push_due(p_now) d on d.id = o.id
+      where d.user_id = u.user_id and d.part = 'evening';
     if ids_eve is not null then
       select string_agg(k || ' ' || private.money(s), ' · ' order by s desc) into cs
         from (select c.key k, sum((c.value #>> '{}')::numeric) s from private.push_outbox o, jsonb_each(coalesce(o.cats, '{}'::jsonb)) c
