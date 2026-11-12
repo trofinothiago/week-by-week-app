@@ -753,6 +753,32 @@ body.sheet-open{overflow:hidden}
 .lrow.prow{grid-template-areas:"d d" "n n" "b b"}
 .lrow .pbtns{grid-area:b;display:flex;flex-wrap:wrap;gap:4px 18px;justify-content:flex-start}
 .lrow.prow.done .n b{color:var(--muted)}
+/* small variants of components (the screens used to write them as style="…") */
+.banner.bad{border-color:var(--bad);background:var(--bad-t)}
+.banner.edge-ok{border-color:var(--ok)} .banner.edge-warn{border-color:var(--warn)} .banner.edge-bad{border-color:var(--bad)}
+.c-s1{--c:var(--s1)} .c-s4{--c:var(--s4)} .c-s5{--c:var(--s5)} .c-muted{--c:var(--muted)}
+.clegend.fit200{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.clegend.fit150{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.clegend.fit140{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
+.acc.head{font-size:.8rem;vertical-align:3px}
+.billamt{display:grid;justify-items:end;line-height:1.2}
+.billamt b{color:var(--ink);font-weight:600}
+.ios-row .dot.bill{background:var(--accent)} .ios-row .dot.bill.idle{background:var(--rule)}
+.bbar.tall{height:12px}
+.weeknav.mid{justify-content:center}
+.stack.g10{gap:10px}
+.chk.multi{gap:10px;align-items:flex-start}
+.ios-adv b.inl{display:inline;font-size:inherit}
+.tint{color:var(--accent)}
+.sw.sq{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px}
+/* helpers, one setting each: like the style="…" they replaced, they win over a section's own size or spacing */
+.fs85{font-size:.85rem!important} .fs88{font-size:.88rem!important} .fs90{font-size:.9rem!important} .fs92{font-size:.92rem!important} .fs130{font-size:1.3rem!important}
+.mt4{margin-top:4px!important} .mt6{margin-top:6px!important} .mt8{margin-top:8px!important} .mt10{margin-top:10px!important} .mt12{margin-top:12px!important}
+.mb16{margin-bottom:16px!important} .my6{margin:6px 0!important}
+.fw4{font-weight:400!important} .fw6{font-weight:600!important} .nowrap{white-space:nowrap!important} .prewrap{white-space:pre-wrap!important}
+.grow{flex:1!important;min-width:0!important} .fullrow{grid-column:1/-1!important} .mw150{min-width:150px!important}
+.l0{left:0!important} .l30{left:30%!important} .l80{left:80%!important} .l100{left:100%!important}
+.bgs1{background:var(--s1)!important} .bgmut{background:var(--muted)!important}
 </style>
 </head><body>
 <div class="wrap"><div class="ios-title"><div class="app-brand"><picture class="app-mark"><source srcset="icon-dark-180.png" media="(prefers-color-scheme: dark)"><img src="icon-180.png" alt="" width="56" height="56"></picture><div><h1>Account</h1><p>Week by Week</p></div></div></div><main id="app-acct" class="stack"></main></div>
