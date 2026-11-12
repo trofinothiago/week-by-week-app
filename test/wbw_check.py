@@ -211,6 +211,12 @@ with sync_playwright() as p:
     ev("() => { document.querySelector('#view .preview').closest('details').open = true; }"); check('Week: the folded report opens and draws', 'What we owe' in view() and not any(s in view() for s in BAD))
     tw = ev("() => { const p = [...document.querySelectorAll('#view .panel')].find(x => /Transfers/.test(x.querySelector('h2')?.innerText || '')), d = p && p.querySelector('details'); return {folded: !!d && !d.open && !!d.querySelector('[data-act=wkToggle]'), pay: !!p?.querySelector('[data-act=tab][data-to=pay]')}; }")
     check('Week: the transfer list is folded (Pay confirms them on their day), with a button to Pay', tw['folded'] and tw['pay'], tw)
+    sy = ev("""() => { const keep = S.health; S.health = {...(keep || {}), at: '2026-11-09T07:45:00Z', tests: '150 of 150 checks passed', checks: [{st: 'ok', area: 'Pay', t: 'kit row'}], fixes: [{t: 'kit fix'}],
+        suggestions: [{id: 'a', title: 'Kit idea one', status: 'proposed'}, {id: 'b', title: 'Kit idea built', status: 'built'}, {id: 'c', title: 'Kit idea three', status: 'proposed'}]};
+      S.tab = 'settings'; S.sub.settings = 'health'; render(); const v = document.getElementById('view'), t = v.innerText, ds = [...v.querySelectorAll('details')];
+      const r = {one: /1\s*Kit idea one/.test(t), three: /3\s*Kit idea three/.test(t), built: t.includes('Kit idea built'), rowHidden: ds.some(d => !d.open && d.innerHTML.includes('kit row')), newsFolded: ds.some(d => !d.open && /What’s new/.test(d.querySelector('summary').innerText)), selfCheck: t.includes('System health')};
+      S.health = {...(keep || {}), suggestions: []}; render(); r.noIdeas = !document.getElementById('view').innerText.includes('Ideas waiting'); S.health = keep; S.tab = 'week'; render(); return r; }""")
+    check('System (cleaner): the self-check stays; Claude’s check is one line with the detail folded; only ideas waiting show, keeping their number; What’s new folded', sy['one'] and sy['three'] and not sy['built'] and sy['rowHidden'] and sy['newsFolded'] and sy['selfCheck'] and sy['noIdeas'], sy)
     ev("() => render()")
     ev("() => { S.canWrite = false; render(); }"); rv = view()
     rfit = ev(PROBE); check("Rory's view fits the phone screen", not rfit, rfit[:8])

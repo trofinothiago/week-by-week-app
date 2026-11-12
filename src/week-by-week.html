@@ -5594,7 +5594,7 @@ function vHealth(){
   const stLabel = {ok: 'All good', warn: 'Worth a look', bad: 'Needs fixing'};
   const lastRun = C.at ? `${fWD.format(new Date(C.at))} ${dshort(new Date(C.at))}, ${String(new Date(C.at).toTimeString()).slice(0, 5)}` : null;
   const row = x => `<div class="lrow"><span class="d">${ICON[x.st] || '•'}</span><span class="n"><b>${esc(x.area || '')}</b> <small>${esc(x.t)}</small></span></div>`;
-  const sug = (C.suggestions || []).filter(x => x && x.title);
+  const sugOpen = (C.suggestions || []).map((x, i) => ({x, i})).filter(({x}) => x && x.title && (!x.status || x.status === 'proposed'));   // the number stays the idea's place in the list, so “aprovo a N” always means the same idea
   const news = S.changelog.filter(c => ['system', 'update'].includes(c.kind) && c.date).sort((a, b) => (b.at || b.date).localeCompare(a.at || a.date)).slice(0, 12);
   const byDay = []; for (const c of news){ const g = byDay.find(x => x.d === c.date); if (g) g.l.push(c); else byDay.push({d: c.date, l: [c]}); }
   return `<div class="stack">
@@ -5606,16 +5606,16 @@ function vHealth(){
     </section>
     <section class="panel"><header><h2>Claude’s weekly system check</h2><span class="mut" style="font-size:.85rem">Every Monday morning</span></header>
       ${lastRun ? `<p><b>${esc(C.summary || stLabel[C.status] || '')}</b><br><span class="mut" style="font-size:.85rem">Last run ${esc(lastRun)}${C.tests ? ` · ${esc(C.tests)}` : ''}</span></p>
-        ${(C.checks || []).length ? `<div class="ledger">${C.checks.map(row).join('')}</div>` : ''}
-        ${(C.fixes || []).length ? `<h3>Fixed this week</h3><div class="ledger">${C.fixes.map(f => row({st: 'ok', area: 'Fixed', t: f.t || f})).join('')}</div>` : ''}`
-      : '<p class="mut">The first full check runs on Monday morning. It plays a whole week on a copy of our data (every screen, Pay, transfers, the money check, Rory’s report and the PDF), fixes clear bugs in the page only if every test passes, and writes the result here.</p>'}
+        ${(C.checks || []).length || (C.fixes || []).length ? `<details><summary>What was checked${(C.fixes || []).length ? ' and fixed' : ''}</summary>${(C.checks || []).length ? `<div class="ledger">${C.checks.map(row).join('')}</div>` : ''}
+        ${(C.fixes || []).length ? `<h3>Fixed this week</h3><div class="ledger">${C.fixes.map(f => row({st: 'ok', area: 'Fixed', t: f.t || f})).join('')}</div>` : ''}</details>` : ''}`
+      : '<p class="mut">Not run yet.</p>'}
     </section>
-    <section class="panel"><header><h2>Ideas waiting for your OK</h2><span class="mut" style="font-size:.85rem">Nothing is built until Thiago says yes</span></header>
-      ${sug.length ? `<div class="ledger">${sug.map((x, i) => `<div class="lrow"><span class="d">${i + 1}</span><span class="n"><b>${esc(x.title)}</b>${x.status && x.status !== 'proposed' ? ` <span class="chip ${x.status === 'built' ? 'ok' : x.status === 'declined' ? 'bad' : 'warn'}">${esc(x.status)}</span>` : ''}<br><small>${esc(x.why || '')}${x.effort ? ` · Effort: ${esc(x.effort)}` : ''}${x.value ? ` · Value: ${esc(x.value)}` : ''}</small></span></div>`).join('')}</div>` : '<p class="mut">No ideas this week.</p>'}
-    </section>
-    <section class="panel"><header><h2>What’s new</h2></header>
-      ${byDay.length ? byDay.map(g => `<h3>${esc(dlong(pd(g.d)))}</h3><ul class="plain">${g.l.map(c => `<li>${esc(String(c.text).replace(/^System (fix|update): /, ''))}</li>`).join('')}</ul>`).join('') : '<p class="mut">Nothing yet.</p>'}
-    </section>
+    ${sugOpen.length ? `<section class="panel"><header><h2>Ideas waiting for your OK</h2><span class="mut" style="font-size:.85rem">Nothing is built until Thiago says yes</span></header>
+      <div class="ledger">${sugOpen.map(({x, i}) => `<div class="lrow"><span class="d">${i + 1}</span><span class="n"><b>${esc(x.title)}</b><br><small>${esc(x.why || '')}${x.effort ? ` · Effort: ${esc(x.effort)}` : ''}${x.value ? ` · Value: ${esc(x.value)}` : ''}</small></span></div>`).join('')}</div>
+    </section>` : ''}
+    ${byDay.length ? `<section class="panel"><details><summary>What’s new <span class="mut">(${news.length} recent change${news.length === 1 ? '' : 's'})</span></summary>
+      ${byDay.map(g => `<h3>${esc(dlong(pd(g.d)))}</h3><ul class="plain">${g.l.map(c => `<li>${esc(String(c.text).replace(/^System (fix|update): /, ''))}</li>`).join('')}</ul>`).join('')}</details>
+    </section>` : ''}
   </div>`;
 }
 /* ---------- backup: everything in the shared store, in one file ---------- */
