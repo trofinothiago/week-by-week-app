@@ -1,5 +1,5 @@
 // Week by Week app: the page's connection to its data, on Supabase.
-// The page asks for window.claude.use('db' | 'user' | 'downloads'), exactly as it does inside Claude
+// The page asks for window.claude.use('db' | 'user' | 'downloads' | 'notify'), as it does inside Claude (where 'notify' doesn't exist)
 // (and as the test kit's mock.js does). Here they come from Supabase: sign-in, the docs table, live updates.
 // The page itself doesn't change. The locks live in the database (supabase/001_base.sql).
 (() => {
@@ -230,6 +230,51 @@
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
   }};
 
+  /* ---------- notifications on this phone (web push: the app opened from the Home Screen, iOS 16.4+) ---------- */
+  // The page asks window.claude.use('notify'). Each of us manages only our own phones and choices (supabase/003_notifications.sql).
+  const PUSH = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const HOME = () => navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+  const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const unb64u = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - s.length % 4) % 4)), c => c.charCodeAt(0));
+  const rpc = async (name, args) => { const {data, error} = await client().rpc(name, args || {}); if (error) throw fail(error); return data; };
+  const mySub = async () => { const r = PUSH && await navigator.serviceWorker.getRegistration('./'); return r ? r.pushManager.getSubscription() : null; };
+  const notify = {
+    state: async () => {   // install | unsupported | blocked | off | on
+      if (!PUSH) return IOS && !HOME() ? 'install' : 'unsupported';
+      if (Notification.permission === 'denied') return 'blocked';
+      const sub = Notification.permission === 'granted' && await mySub();
+      if (!sub) return 'off';
+      const {data, error} = await client().from('push_devices').select('endpoint').eq('endpoint', sub.endpoint);
+      if (error) throw fail(error);
+      return data && data.length ? 'on' : 'off';
+    },
+    on: async label => {   // called straight from the tap: the permission question comes first (iOS only asks from a tap)
+      if (!PUSH){ const x = new Error('unsupported'); x.code = 'unsupported'; throw x; }
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') return perm === 'denied' ? 'blocked' : 'off';
+      const key = await rpc('push_public_key');
+      if (!key) throw fail({message: 'The sender isn’t ready yet'});
+      await navigator.serviceWorker.register('sw.js', {scope: './'});
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+      if (sub && sub.options && sub.options.applicationServerKey && b64u(sub.options.applicationServerKey) !== key){ await sub.unsubscribe(); sub = null; }   // made for other keys
+      sub ||= await reg.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: unb64u(key)});
+      const j = sub.toJSON();
+      const {error} = await client().from('push_devices').upsert({endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, label: String(label || '').slice(0, 60)});
+      if (error) throw fail(error);
+      return 'on';
+    },
+    off: async () => {
+      const sub = await mySub();
+      if (sub){ const {error} = await client().from('push_devices').delete().eq('endpoint', sub.endpoint); if (error) throw fail(error); await sub.unsubscribe(); }
+      return 'off';
+    },
+    prefs: () => rpc('push_my_prefs'),
+    save: async p => { const {error} = await client().from('push_prefs').upsert({data: p}, {onConflict: 'user_id'}); if (error) throw fail(error); return rpc('push_my_prefs'); },   // the row is the signed-in account's (the database stamps it)
+    test: () => rpc('push_test')
+  };
+
   /* ---------- the account page (import.html) ---------- */
   const account = {
     me: () => me, signOut,
@@ -244,8 +289,8 @@
 
   window.claude = {use: async name => {
     if (name === 'downloads') return downloads;
-    if (name !== 'db' && name !== 'user' && name !== 'account') return null;
+    if (name !== 'db' && name !== 'user' && name !== 'account' && name !== 'notify') return null;
     await (ready ||= start());
-    return name === 'db' ? db : name === 'account' ? account : {can: async cap => cap === 'data.write' ? me.role === 'editor' : cap === 'answer.own' ? me.role === 'viewer' : false};
+    return name === 'db' ? db : name === 'account' ? account : name === 'notify' ? notify : {can: async cap => cap === 'data.write' ? me.role === 'editor' : cap === 'answer.own' ? me.role === 'viewer' : false};
   }};
 })();

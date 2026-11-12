@@ -14,6 +14,8 @@
   for (const [c, docs] of Object.entries(window.__SEED__ || {})) { store[c] = {}; for (const [id, d] of Object.entries(docs)) store[c][id] = {data: JSON.parse(JSON.stringify(d)), at: new Date(0).toISOString()}; }
   window.__store = new Proxy({}, {get: (_, c) => Object.fromEntries(Object.entries(store[c] || {}).map(([k, v]) => [k, v.data])), ownKeys: () => Object.keys(store), getOwnPropertyDescriptor: () => ({enumerable: true, configurable: true})});
   window.__writes = []; window.__saved = []; window.__calls = [];
+  window.__pushDevices = {}; window.__pushPrefs = {}; window.__pushTests = [];
+  const PUSH_DEFAULTS = {buys: 'now', shop: 'evening', moves: 'now', pots: 'now', asks: 'now', decided: 'now', edits: 'now', report: 'now', answers: 'now', digestAt: '21:00', quiet: {from: '23:00', to: '08:00'}};   // as private.push_prefs_of
 
   const b64 = o => btoa(JSON.stringify(o)).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
   const unb64 = s => JSON.parse(atob(s.replace(/-/g, '+').replace(/_/g, '/')));
@@ -106,7 +108,7 @@
       const title = d.kind === 'compare' ? `Compare, ${qd.name || ''} · ${qd.rory.planName || ''}` : `wishlist, ${qd.what || ''} ${eur(qd.price)}`;
       const short = d.kind === 'compare' ? `Rory said ${d.answer} to ${qd.name || ''} · ${qd.rory.planName || ''}: “${said}”` : `Rory said ${d.answer} to ${qd.what || ''}: “${said}”`;
       const day = new Intl.DateTimeFormat('en-CA', {timeZone: 'Europe/Dublin'}).format(new Date(ts));
-      (store.changelog ||= {})['ans' + body.id] = {data: {at: ts, date: day, kind: 'decision', text: `Rory’s answer, from his own account (${title}): ${d.answer}, “${said}”.`, [d.kind === 'compare' ? 'cmp' : 'wish']: d.ref, step: 'answer', rory: d.answer, short}, at: ts};
+      (store.changelog ||= {})['ans' + body.id] = {data: {at: ts, date: day, kind: 'decision', text: `Rory’s answer, from his own account (${title}): ${d.answer}, “${said}”.`, [d.kind === 'compare' ? 'cmp' : 'wish']: d.ref, step: 'answer', rory: d.answer, short, tell: 'answers'}, at: ts};
       return res(201, [pick({id: body.id, data, at: ts}, q.get('select'))]);
     }
     if (u.pathname === '/rest/v1/rpc/doc_merge'){
@@ -125,6 +127,30 @@
       for (const d of list) (store[d.coll] ||= {})[d.id] = {data: d.data, at: d.coll === 'answers' && d.data.at ? d.data.at : now()};
       window.__writes.push(['import', list.length]);
       return res(200, list.length);
+    }
+    // ---- notifications: the same rules as supabase/003_notifications.sql (each of us, our own phones and choices only) ----
+    if (u.pathname === '/rest/v1/push_devices'){
+      const D = window.__pushDevices, f = eqs(q), one = Array.isArray(body) ? body[0] : body;
+      if (!role) return m === 'GET' ? res(200, []) : denied();
+      if (m === 'GET') return res(200, Object.values(D).filter(d => d.user_id === me.id && (!f.endpoint || d.endpoint === f.endpoint)).map(d => pick(d, q.get('select'))));
+      if (m === 'POST'){
+        if (!/^https:\/\//.test(one.endpoint || '')) return res(400, {code: '23514', message: 'check constraint'});
+        if ((one.user_id && one.user_id !== me.id) || (D[one.endpoint] && D[one.endpoint].user_id !== me.id)) return denied();
+        D[one.endpoint] = {...one, user_id: me.id}; window.__writes.push(['device', role]); return res(201, []);
+      }
+      if (m === 'DELETE'){ if (D[f.endpoint] && D[f.endpoint].user_id === me.id) delete D[f.endpoint]; return res(200, []); }
+    }
+    if (u.pathname === '/rest/v1/push_prefs'){
+      const one = Array.isArray(body) ? body[0] : body;
+      if (!role || (m === 'POST' && one.user_id && one.user_id !== me.id)) return denied();
+      if (m === 'GET') return res(200, window.__pushPrefs[me.id] ? [{user_id: me.id, data: window.__pushPrefs[me.id]}] : []);
+      if (m === 'POST'){ window.__pushPrefs[me.id] = one.data; window.__writes.push(['prefs', role]); return res(201, []); }
+    }
+    if (u.pathname === '/rest/v1/rpc/push_my_prefs') return res(200, role ? {...PUSH_DEFAULTS, ...(window.__pushPrefs[me.id] || {})} : null);
+    if (u.pathname === '/rest/v1/rpc/push_public_key') return res(200, role ? 'B' + 'A'.repeat(86) : null);
+    if (u.pathname === '/rest/v1/rpc/push_test'){
+      if (!role) return res(403, {code: '42501', message: 'not one of us'});
+      const n = Object.values(window.__pushDevices).filter(d => d.user_id === me.id).length; window.__pushTests.push({role, n}); return res(200, n);
     }
     return res(404, {message: 'not in the fake: ' + m + ' ' + u.pathname});
   }

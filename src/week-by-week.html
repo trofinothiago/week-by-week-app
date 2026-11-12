@@ -945,7 +945,7 @@ const occName = (b, d) => { if (!b || b.freq !== 'instal') return b ? b.name : '
 
 /* ---------- state ---------- */
 const S = {
-  tab:'today', sub:{money:'balance', plan:'plan', settings:'setup'}, todayOpen:'', db:null, noDb:false, canWrite:true, canAnswer:false, dlP:Promise.resolve(null), sampleP:Promise.resolve(null),
+  tab:'today', sub:{money:'balance', plan:'plan', settings:'setup'}, todayOpen:'', db:null, noDb:false, canWrite:true, canAnswer:false, ntf:null, dlP:Promise.resolve(null), sampleP:Promise.resolve(null),
   settings:{}, plan:{}, facts:{}, advice:{}, energy:{}, health:{}, assets:[], bills:[], cardlog:[], spending:[], wishlist:[], changelog:[], weeks:{}, wise:[], checks:[], klarna:[], loans:[], moves:[], compare:[], answers:[], prep:[], prepCfg:{},
   got:{}, reportWeek:null, billOpen:false, err:'', busy:false,
   f:{
@@ -2188,7 +2188,7 @@ async function moveSave(){
     if (doc.cardId){ await S.db.doc('cardlog/' + doc.cardId).set({type: 'payment', date: doc.date, amount: amt, note: doc.note || `Extra payment from ${mvShort(f.from)}`, at, moveId: id}); done.push('card payment logged'); }
     if (doc.due){ await weekUpdate(doc.due.w, {transfers: {[doc.due.id]: true}}, true); done.push(`${bill.name}: Vault move ticked`); }
     const why = mvBreak(doc) === 1 ? ' (taken from the Bills Pocket by hand: rule 1)' : mvBreak(doc) === 2 ? ' (Vault money used for something other than its bill: rule 2)' : f.from === 'ef' && f.to !== 'cash' ? ' (emergency fund used: refilling it comes first)' : f.to === 'cash' ? ' (cash at home: part of the emergency fund)' : bill ? ` (for ${bill.name})` : '';
-    await logChange('transfer', `Moved ${money(amt)} from ${mvName(f.from)} to ${mvName(f.to)} on ${dshort(pd(doc.date))}${doc.note ? `: ${doc.note}` : ''}${why}${done.length ? `. Done automatically: ${done.join('; ')}` : ''}`);
+    await logChange('transfer', `Moved ${money(amt)} from ${mvName(f.from)} to ${mvName(f.to)} on ${dshort(pd(doc.date))}${doc.note ? `: ${doc.note}` : ''}${why}${done.length ? `. Done automatically: ${done.join('; ')}` : ''}`, {tell: mvBreak(doc) || (f.from === 'ef' && f.to !== 'cash') ? 'pots' : 'moves'});
     blank(); toast('Move logged'); render();
   } catch (e) { writeErr(e); }
 }
@@ -2389,7 +2389,7 @@ async function klSave(){
   const doc = {what: String(f.what).trim(), total, date: f.date, first: pd(f.first) ? f.first : f.date, n, every: f.every === '2w' ? '2w' : 'month', paidFrom: f.paidFrom === 'joint' ? 'joint' : 'card', who: f.who, at: new Date().toISOString()};
   try {
     await S.db.collection('klarna').add(doc);
-    await logChange('card', `Klarna: ${doc.what} ${money(total)} in ${n} instalments of about ${money(total / n)}, ${doc.paidFrom === 'card' ? 'on the AIB card' : 'from the Joint account'} (${WHO[doc.who]})`);
+    await logChange('card', `Klarna: ${doc.what} ${money(total)} in ${n} instalments of about ${money(total / n)}, ${doc.paidFrom === 'card' ? 'on the AIB card' : 'from the Joint account'} (${WHO[doc.who]})`, {tell: 'decided'});
     S.f.kl = {what: '', total: '', date: iso(today()), n: '3', every: 'month', first: '', paidFrom: 'card', who: ''}; toast('Klarna plan saved'); render();
   } catch (e) { writeErr(e); }
 }
@@ -2507,7 +2507,7 @@ async function splitSave(){
   const at = new Date().toISOString(), rid = 'r' + Date.now().toString(36), where = String(f.what).trim();
   try {
     for (const [cat, amount, kind] of L.lines) await S.db.collection('spending').add({date: f.date, what: `${where} · ${cat.toLowerCase()}`, amount, who: f.who, cat, paidFrom: f.paidFrom || 'joint', kind, told: f.told, note: String(f.note || '').trim(), receipt: rid, at});
-    await logChange('spending', `Purchase (one receipt at ${where}, ${money(L.tot)}): ${L.lines.map(([c, a]) => `${c} ${money(a)}`).join(', ')} · ${WHO[f.who]} · from ${ACC[f.paidFrom || 'joint'] ? ACC[f.paidFrom || 'joint'].short : f.paidFrom}${f.paidFrom === 'bills' ? ' (rule 1: to be put back)' : ''} · Rory knew: ${TOLD[f.told].toLowerCase()}`);
+    await logChange('spending', `Purchase (one receipt at ${where}, ${money(L.tot)}): ${L.lines.map(([c, a]) => `${c} ${money(a)}`).join(', ')} · ${WHO[f.who]} · from ${ACC[f.paidFrom || 'joint'] ? ACC[f.paidFrom || 'joint'].short : f.paidFrom}${f.paidFrom === 'bills' ? ' (rule 1: to be put back)' : ''} · Rory knew: ${TOLD[f.told].toLowerCase()}`, spendTell(L.lines, f.paidFrom || 'joint'));
     S.f.spend = {date: iso(today()), what: '', amount: '', cat: '', paidFrom: f.paidFrom === 'bills' ? 'joint' : f.paidFrom || 'joint', who: '', kind: 'need', told: 'before', note: '', split: 'yes'};
     toast(`Receipt logged in ${L.lines.length} line${L.lines.length > 1 ? 's' : ''}`); S.todayOpen = ''; render();
   } catch (e) { writeErr(e); }
@@ -3014,7 +3014,7 @@ function reportFull(ws, D){   // the live view: the one-page board, then the det
 function vRory(){
   const cur = weekStartOf(today()), ws = S.reportWeek ? pd(S.reportWeek) : cur, isCur = iso(ws) === iso(cur);
   if (!flow().configured) return '<p class="mut">Nothing set up yet.</p>';
-  return `<div class="stack"><div class="weeknav" style="justify-content:center"><button class="btn small" data-act="wkPrev" aria-label="Previous week">←</button><b>${weekLabel(ws)}</b><button class="btn small" data-act="wkNext" aria-label="Next week"${isCur ? ' disabled' : ''}>→</button></div>${isCur ? roryAskCard() : ''}${reportFull(ws, reportData(ws))}</div>`;
+  return `<div class="stack"><div class="weeknav" style="justify-content:center"><button class="btn small" data-act="wkPrev" aria-label="Previous week">←</button><b>${weekLabel(ws)}</b><button class="btn small" data-act="wkNext" aria-label="Next week"${isCur ? ' disabled' : ''}>→</button></div>${isCur ? roryAskCard() : ''}${reportFull(ws, reportData(ws))}${ntfRoryCard()}</div>`;
 }
 function vHistory(){
   const list = S.changelog.slice().sort((a, b) => (b.at || '').localeCompare(a.at || ''));
@@ -3650,7 +3650,7 @@ async function unkSave(prefill){
   if (!(amount > 0)) return (S.err = 'Enter the amount that is missing.', render());
   if (!needDb()) return; S.err = '';
   const doc = {date, what: 'Unexplained difference', amount, cat: 'Unexplained', paidFrom: f.paidFrom || 'joint', who: 'both', kind: 'unknown', told: 'before', note: String(f.note || '').trim(), at: new Date().toISOString()};
-  try { await S.db.collection('spending').add(doc); await logChange('check', `Logged ${money(amount)} missing from the ${doc.paidFrom === 'card' ? 'AIB card' : 'Joint account'} that we couldn’t explain${doc.note ? ` (${doc.note})` : ''}`); S.f.unk = {date: iso(today()), paidFrom: 'joint'}; toast('Logged as unexplained'); render(); } catch (e) { writeErr(e); }
+  try { await S.db.collection('spending').add(doc); await logChange('check', `Logged ${money(amount)} missing from the ${doc.paidFrom === 'card' ? 'AIB card' : 'Joint account'} that we couldn’t explain${doc.note ? ` (${doc.note})` : ''}`, {tell: 'buys'}); S.f.unk = {date: iso(today()), paidFrom: 'joint'}; toast('Logged as unexplained'); render(); } catch (e) { writeErr(e); }
 }
 function revolutSetup(){
   const fl = flow(), vs = vaultBills(), one = vaultOne(), p = PL();
@@ -4087,7 +4087,7 @@ async function varLog(id, extra = {}){
   try {
     await S.db.doc('bills/' + id).update(patch);
     const diff = entry.held != null ? (amt <= entry.held ? ` ${money(entry.held - amt)} stays in the Vault for the next one.` : ` ${money(amt - entry.held)} more than the Vault was saving; the Bills Pocket buffer covers it.`) : '';
-    await logChange('bill', `${b.name}: real bill ${money(amt)}, taken ${dshort(pd(date))}${num(b.amount) ? ` (estimate was ${money(b.amount)})` : ''}.${diff} Next estimate: ${money(est)}.`);
+    await logChange('bill', `${b.name}: real bill ${money(amt)}, taken ${dshort(pd(date))}${num(b.amount) ? ` (estimate was ${money(b.amount)})` : ''}.${diff} Next estimate: ${money(est)}.`, {tell: ''});
     delete v[`${id}_amount`]; delete v[`${id}_date`]; toast('Bill logged'); render();
   } catch (er) { writeErr(er); }
 }
@@ -4095,7 +4095,7 @@ async function varDel(id, date){
   const b = S.bills.find(x => x.id === id); if (!b || !needDb()) return;
   const key = id + date; if (S.confirmVb !== key){ S.confirmVb = key; toast('Click Delete again to remove that bill.'); return; } S.confirmVb = null;
   const hist = billHist(b).filter(x => x.date !== date), est = varEstimate({...b, history: hist}).est, enA = id === EN().billId && enOn() ? {anchor: iso(enTarget({...b, history: hist}).on)} : {};
-  try { await S.db.doc('bills/' + id).update({history: hist, amount: hist.length ? est : num(b.amount), ...enA, updatedAt: new Date().toISOString()}); await logChange('bill', `${b.name}: removed the bill of ${dshort(pd(date))}`); toast('Removed'); } catch (er) { writeErr(er); }
+  try { await S.db.doc('bills/' + id).update({history: hist, amount: hist.length ? est : num(b.amount), ...enA, updatedAt: new Date().toISOString()}); await logChange('bill', `${b.name}: removed the bill of ${dshort(pd(date))}`, {tell: 'edits'}); toast('Removed'); } catch (er) { writeErr(er); }
 }
 
 /* ---------- electricity: the smart tariff, the weekly readings from the Energia app, and the next bill before it comes ---------- */
@@ -4195,7 +4195,7 @@ function enTarget(bx){   // what the electricity bill in the system should say: 
 async function enWrite(patch, log){
   if (!needDb()) return false;
   const out = {...ENERGY0, ...(S.energy || {}), ...patch, updatedAt: new Date().toISOString()}; delete out.id;
-  try { await S.db.doc('config/energy').set(out); S.energy = out; if (log) await logChange('bill', log); await enSync(); return true; } catch (e) { writeErr(e); return false; }
+  try { await S.db.doc('config/energy').set(out); S.energy = out; if (log) await logChange('bill', log, {tell: ''}); await enSync(); return true; } catch (e) { writeErr(e); return false; }
 }
 async function enSync(){   // the forecast becomes the electricity bill's amount and date: the Bills Pocket (or the Vault), the forecasts, the budget and the report follow
   const b = enBill(); if (!b || !S.db || !S.canWrite) return;
@@ -4209,8 +4209,8 @@ async function enSync(){   // the forecast becomes the electricity bill's amount
   patch.updatedAt = new Date().toISOString();
   try {
     await S.db.doc('bills/' + b.id).update(patch);
-    if (patch.amount != null || patch.anchor) await logChange('bill', `${b.name}: ${T.real ? `the real bill, ${money(T.amount)}` : `next bill estimated at ${money(T.amount)} (forecast ${money(enForecast().cost)}, ${Math.round(enForecast().kwh)} kWh)`}, taken around ${dlong(T.on)}${patch.amount != null ? ` (was ${money(b.amount)})` : ''}. Updated on its own from the electricity readings.`);
-    if (patch.vault != null) await logChange('bill', `${b.name}: the money for it now waits in ${vault ? 'the Vault “Bills Ahead” (its weekly amount joins the Vault transfer)' : 'the Bills Pocket (its reserve covers it, no transfer changes)'}`);
+    if (patch.amount != null || patch.anchor) await logChange('bill', `${b.name}: ${T.real ? `the real bill, ${money(T.amount)}` : `next bill estimated at ${money(T.amount)} (forecast ${money(enForecast().cost)}, ${Math.round(enForecast().kwh)} kWh)`}, taken around ${dlong(T.on)}${patch.amount != null ? ` (was ${money(b.amount)})` : ''}. Updated on its own from the electricity readings.`, {tell: ''});
+    if (patch.vault != null) await logChange('bill', `${b.name}: the money for it now waits in ${vault ? 'the Vault “Bills Ahead” (its weekly amount joins the Vault transfer)' : 'the Bills Pocket (its reserve covers it, no transfer changes)'}`, {tell: ''});
   } catch (e) { writeErr(e); }
 }
 async function enLink(){   // create the electricity bill if it isn't in the system
@@ -4218,7 +4218,7 @@ async function enLink(){   // create the electricity bill if it isn't in the sys
   const T = enTarget({history: []});
   try {
     await S.db.doc('bills/' + EN().billId).set({name: 'Electricity (Energia)', amount: T.amount, freq: 'bimonthly', anchor: iso(T.on), account: 'bills', kind: 'debit', cat: 'Utilities', catBy: 'chosen', vault: EN().mode === 'vault', variable: true, active: true, manual: false, note: 'Smart tariff. The amount and date come from the weekly kWh readings (Money → Electricity).', history: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()});
-    await logChange('bill', `Added Electricity (Energia), every 2 months from the Bills Pocket: ${money(T.amount)} around ${dlong(T.on)}, from the readings`);
+    await logChange('bill', `Added Electricity (Energia), every 2 months from the Bills Pocket: ${money(T.amount)} around ${dlong(T.on)}, from the readings`, {tell: ''});
     toast('Electricity bill added'); render();
   } catch (e) { writeErr(e); }
 }
@@ -4229,7 +4229,7 @@ async function enReadSave(upTo, kwh, eur, quiet){
   const prev = EN().readings.filter(x => x.upTo && x.upTo.slice(0, 7) === r.upTo.slice(0, 7) && x.upTo < r.upTo).sort((a, b) => a.upTo.localeCompare(b.upTo)).pop();
   const delta = prev ? `+${(r.kwh - num(prev.kwh)).toFixed(2)} kWh since ${dshort(pd(prev.upTo))}` : `+${r.kwh} kWh since 1 ${enMonth(d)}`;
   const ok = await enWrite({readings: list});
-  if (ok){ const F = enForecast(); await logChange('bill', `Electricity reading: ${r.kwh} kWh so far in ${enMonth(d)}, up to ${dshort(d)} (${delta})${r.eur ? `, ${money(r.eur)} in the Energia app` : ''}. Use now ${F.rate.toFixed(2)} kWh a day (${enPct(F.pctKwh)} on the last bill). Next bill about ${money(F.cost)}${Math.abs(F.cost - before) >= .5 ? ` (was ${money(before)})` : ''}.`); }
+  if (ok){ const F = enForecast(); await logChange('bill', `Electricity reading: ${r.kwh} kWh so far in ${enMonth(d)}, up to ${dshort(d)} (${delta})${r.eur ? `, ${money(r.eur)} in the Energia app` : ''}. Use now ${F.rate.toFixed(2)} kWh a day (${enPct(F.pctKwh)} on the last bill). Next bill about ${money(F.cost)}${Math.abs(F.cost - before) >= .5 ? ` (was ${money(before)})` : ''}.`, {tell: ''}); }
   return ok;
 }
 const enMonthStart = d => new Date(d.getFullYear(), d.getMonth(), 1);
@@ -4956,7 +4956,7 @@ async function cmpTrialBill(id){   // a trial cancelled after its comparison was
   try {
     await S.db.doc('bills/' + b.id).update({active: false, updatedAt: at});
     for (const x of b.trialReplaced || []) if (S.bills.some(y => y.id === x.id)) await S.db.doc('bills/' + x.id).update({endsOn: x.endsOn || null, updatedAt: at});
-    await logChange('bill', `Free trial cancelled before the first charge: ${b.name} paused${(b.trialReplaced || []).length ? `, and ${b.trialReplaced.map(x => x.name).join(' and ')} back as before` : ''}.`);
+    await logChange('bill', `Free trial cancelled before the first charge: ${b.name} paused${(b.trialReplaced || []).length ? `, and ${b.trialReplaced.map(x => x.name).join(' and ')} back as before` : ''}.`, {tell: 'decided'});
     toast('Trial cancelled'); render();
   } catch (e) { writeErr(e); }
 }
@@ -5318,7 +5318,7 @@ function prepHeads(ws){
 
 /* ---------- actions ---------- */
 async function prepCfgSet(patch){ const r = S.db.doc('config/prep'); if (S.prepCfg && Object.keys(S.prepCfg).length) await r.update(patch); else await r.set(patch); }
-async function prepSet(x, patch, text){ await S.db.doc('prep/' + x.id).update({...patch, at: new Date().toISOString()}); if (text) await logChange('ready', text); }
+async function prepSet(x, patch, text, extra){ await S.db.doc('prep/' + x.id).update({...patch, at: new Date().toISOString()}); if (text) await logChange('ready', text, extra); }
 async function prepAction(a, b){
   const id = b.dataset.id, x = S.prep.find(y => y.id === id);
   if (a === 'prepBuy'){ S.prepBuy = S.prepBuy === id ? null : id || null; S.err = ''; render(); return; }
@@ -5332,14 +5332,14 @@ async function prepAction(a, b){
     if (a === 'prepHave' && x){ await prepSet(x, {have: num(x.qty), haveAt: at}, `Ready kit: we have ${x.name}`); toast('Ticked'); }
     else if (a === 'prepUndo' && x){ if (S.confirmPrep !== id){ S.confirmPrep = id; render(); return; } S.confirmPrep = null;
       if (x.spendId && S.spending.some(y => y.id === x.spendId)) await S.db.doc('spending/' + x.spendId).delete();
-      await prepSet(x, {have: 0, exp: null, spendId: null, haveAt: null}, `Ready kit: ${x.name} undone${x.spendId ? ' (its purchase removed)' : ''}`); toast('Undone'); }
+      await prepSet(x, {have: 0, exp: null, spendId: null, haveAt: null}, `Ready kit: ${x.name} undone${x.spendId ? ' (its purchase removed)' : ''}`, x.spendId ? {tell: 'edits'} : {}); toast('Undone'); }
     else if (a === 'prepBuySave' && x){ const k = 'ppb_' + x.id, f = S.f[k] || {}, amt = Math.round(num(f.amount) * 100) / 100; S.errAt = k;
       if (!(amt > 0)) { S.err = 'Enter what it cost.'; render(); return; }
       if (!pd(f.date) || f.date > iso(today())) { S.err = 'Pick the day it was bought.'; render(); return; }
       if (x.life && !pd(f.exp)) { S.err = 'Add the use-by date from the pack.'; render(); return; }
-      S.err = ''; const sid = 'sp' + Date.now() + Math.random().toString(36).slice(2, 6);
-      await S.db.doc('spending/' + sid).set({date: f.date, what: `Ready kit: ${x.name}`, amount: amt, who: 'both', cat: x.cat === 'meds' ? 'Health' : 'Home', paidFrom: f.paidFrom || 'joint', kind: 'need', told: prepAgreed() ? 'before' : 'after', note: 'Ready kit (Plan → Ready)', at, prepId: x.id});
-      await prepSet(x, {have: num(x.qty), spendId: sid, haveAt: at, exp: x.life ? f.exp : null}, `Ready kit: bought ${x.name} for ${money(amt)}${x.life ? `, use by ${dshort(pd(f.exp))}` : ''}`);
+      S.err = ''; const sid = 'sp' + Date.now() + Math.random().toString(36).slice(2, 6), cat = x.cat === 'meds' ? 'Health' : 'Home';
+      await S.db.doc('spending/' + sid).set({date: f.date, what: `Ready kit: ${x.name}`, amount: amt, who: 'both', cat, paidFrom: f.paidFrom || 'joint', kind: 'need', told: prepAgreed() ? 'before' : 'after', note: 'Ready kit (Plan → Ready)', at, prepId: x.id});
+      await prepSet(x, {have: num(x.qty), spendId: sid, haveAt: at, exp: x.life ? f.exp : null}, `Ready kit: bought ${x.name} for ${money(amt)}${x.life ? `, use by ${dshort(pd(f.exp))}` : ''}`, spendTell([[cat, amt]], f.paidFrom || 'joint'));
       S.prepBuy = null; delete S.f[k]; toast('Logged'); }
     else if (a === 'prepWish' && x){ const wid = 'wi' + Date.now() + Math.random().toString(36).slice(2, 6);
       await S.db.doc('wishlist/' + wid).set({what: `Ready: ${x.name}`, price: num(x.cost), who: 'both', kind: 'need', prio: num(x.stage) <= 3 ? '1' : '2', told: prepAgreed() ? 'yes' : 'no', by: '', note: 'Emergency kit (Plan → Ready)', addedAt: at, status: 'waiting', prepId: x.id});
@@ -5454,7 +5454,7 @@ async function cardIntSave(){
   const doc = {type: 'interest', stmt: sIso, date: on, amount, ...(base != null ? {base: Math.round(base * 100) / 100} : {}), days, note: `Interest on the ${dshort(c.S)} statement`, at: `${on}T00:00:00.000Z`, loggedAt: new Date().toISOString()};   // at: the start of its day, so a money check that day already has it
   try {
     if (old) await S.db.doc('cardlog/' + old.id).set(doc); else await S.db.collection('cardlog').add(doc);
-    await logChange('card', `AIB card interest on the ${dshort(c.S)} statement: ${money(amount)}, from the statement${old ? ` (was ${money(old.amount)})` : est != null ? ` (the estimate was about ${money(est)})` : ''}. It replaces the estimate in the card balance, the month result and the money check.`);
+    await logChange('card', `AIB card interest on the ${dshort(c.S)} statement: ${money(amount)}, from the statement${old ? ` (was ${money(old.amount)})` : est != null ? ` (the estimate was about ${money(est)})` : ''}. It replaces the estimate in the card balance, the month result and the money check.`, {tell: ''});
     S.f.ci = {}; toast('Interest saved'); render();
   } catch (e) { writeErr(e); }
 }
@@ -5671,6 +5671,47 @@ function backupPanel(){
     <p>${d ? `Last backup: <b>${dlong(d)}</b>${a ? ` (${a} day${a === 1 ? '' : 's'} ago)` : ' (today)'}.` : 'No backup yet.'} Once a month is enough: the To do list reminds you.</p>
     <p class="mut" style="font-size:.88rem">It saves every bill, purchase, transfer, money check, card payment, electricity reading, setting and the whole History as one file (.json). Keep it in iCloud Drive or Files. If anything is ever deleted by mistake, send the file to Claude and it can be put back.</p>
     <div class="actions"><button class="btn strong" data-act="backup">⬇ Download a backup</button></div></section>`;
+}
+/* ---------- notifications on this phone (only in our own app: window.claude.use('notify'); each of us chooses for ourselves) ---------- */
+const NTF_KINDS = {viewer: [['asks', 'Thiago is asking you'], ['decided', 'Decisions, and anything decided without you'], ['buys', 'Purchases and card charges'], ['shop', 'The shop, cigarettes and drinks'], ['pots', 'Bills Pocket, Vault or emergency fund used'], ['moves', 'Bills paid, transfers and money added'], ['edits', 'Anything changed, undone or deleted'], ['report', 'The weekly report']],
+  editor: [['answers', 'Rory’s answers']]};
+const NTF_STATE = {install: 'To get notifications, open Week by Week from its icon on the Home Screen (in Safari: Share → Add to Home Screen). The iPhone only allows them there, from iOS 16.4.',
+  unsupported: 'This browser can’t show notifications from Week by Week.', blocked: 'Notifications are blocked for Week by Week on this phone. Turn them on in the iPhone’s Settings → Notifications → Week by Week, then come back here.',
+  off: 'Off on this phone.', on: 'On for this phone.'};
+const ntfRole = () => S.canWrite ? 'editor' : 'viewer';
+const ntfForm = p => ({...Object.fromEntries(NTF_KINDS[ntfRole()].map(([k]) => [k, p[k] || 'now'])), digestAt: p.digestAt || '21:00', quiet: p.quiet ? 'yes' : 'no', qFrom: (p.quiet || {}).from || '23:00', qTo: (p.quiet || {}).to || '08:00'});
+async function ntfLoad(api){ try { const [state, prefs] = await Promise.all([api.state(), api.prefs()]); S.ntf = {api, state, prefs}; S.f.ntf = ntfForm(prefs || {}); } catch (e) { console.warn(e); S.ntf = null; } render(); }
+function ntfBody(){
+  const N = S.ntf, f = S.f.ntf || {}, kinds = NTF_KINDS[ntfRole()], busy = N.busy ? ' disabled' : '';
+  const t = x => `<div class="fld"><span class="label">${esc(x[1])}</span>${seg('ntf', x[0], [['now', 'Right away'], ['evening', 'Evening'], ['off', 'Off']])}</div>`;
+  return `<p>${esc(NTF_STATE[N.state] || '')}</p>
+    ${N.state === 'off' ? `<div class="actions"><button class="btn strong" data-act="ntfOn"${busy}>Turn on for this phone</button></div>` : N.state === 'on' ? `<div class="actions"><button class="btn" data-act="ntfTest"${busy}>Send me a test</button><button class="btn" data-act="ntfOff"${busy}>Turn off</button></div>` : ''}
+    <div class="form">${kinds.map(t).join('')}
+      ${kinds.some(([k]) => f[k] === 'evening') ? field('ntf', 'digestAt', 'Evening summary at', {type: 'time'}) : ''}
+      <div class="fld"><span class="label">Quiet hours <small>What comes in them waits until they end</small></span>${seg('ntf', 'quiet', [['yes', 'Quiet hours'], ['no', 'None']])}</div>
+      ${f.quiet === 'yes' ? `${field('ntf', 'qFrom', 'From', {type: 'time'})}${field('ntf', 'qTo', 'To', {type: 'time'})}` : ''}</div>
+    ${S.err && S.errAt === 'ntf' ? `<p class="err">${esc(S.err)}</p>` : ''}
+    <div class="actions"><button class="btn strong" data-act="ntfSave"${busy}>Save my choices</button></div>
+    <p class="mut" style="font-size:.85rem">Your own choices, on your own account: nobody else sees or changes them. ${ntfRole() === 'viewer' ? 'The shop, cigarettes and drinks can come together in the evening, with the totals.' : 'Rory chooses his in his own app.'}</p>`;
+}
+function ntfPanel(){ return S.ntf ? `<section class="panel" id="ntfPanel"><header><h2>Notifications</h2><span class="mut" style="font-size:.85rem">On this phone</span></header>${ntfBody()}</section>` : ''; }
+function ntfRoryCard(){ return S.ntf ? `<div class="board"><section class="bcard wide ntf"><h3>Notifications <span class="bh">on this phone</span></h3>${ntfBody()}</section></div>` : ''; }
+async function ntfDo(fn, after){   // fn runs straight from the tap: the iPhone only asks for permission from a tap
+  const N = S.ntf; if (!N || N.busy) return;
+  let p; try { p = fn(N.api); } catch (e) { p = Promise.reject(e); }
+  N.busy = true; S.errAt = 'ntf'; S.err = ''; render();
+  try { const r = await p; const msg = after(r); if (msg) toast(msg); }
+  catch (e) { console.warn(e); S.err = /tests in 10 minutes/.test((e && e.message) || '') ? e.message : e && e.code === 'unsupported' ? NTF_STATE.unsupported : 'Couldn’t reach the notifications. Check the connection and try again.'; }
+  N.busy = false; render();
+}
+function ntfSave(){
+  const f = S.f.ntf || {}, hm = /^([01]\d|2[0-3]):[0-5]\d$/, kinds = NTF_KINDS[ntfRole()];
+  S.errAt = 'ntf';
+  if (kinds.some(([k]) => f[k] === 'evening') && !hm.test(f.digestAt || '')) return (S.err = 'Choose the time of the evening summary.', render());
+  if (f.quiet === 'yes' && (!hm.test(f.qFrom || '') || !hm.test(f.qTo || ''))) return (S.err = 'Choose when the quiet hours start and end.', render());
+  if (f.quiet === 'yes' && f.qFrom === f.qTo) return (S.err = 'The quiet hours start and end at the same time.', render());
+  const prefs = {...Object.fromEntries(kinds.map(([k]) => [k, f[k] || 'now'])), digestAt: f.digestAt || '21:00', quiet: f.quiet === 'yes' ? {from: f.qFrom, to: f.qTo} : null};
+  return ntfDo(n => n.save(prefs), r => { S.ntf.prefs = r; S.f.ntf = ntfForm(r || {}); return 'Saved'; });
 }
 /* ---------- the new look (iOS-like): the same engine, drawn the way the iPhone draws things ---------- */
 const ICO = {
@@ -6303,7 +6344,7 @@ function vRules(){
   ${factsPanel()}
   <section class="panel"><header><h2>Why we’re doing this</h2></header>${reasons.length ? `<ul class="reasons">${reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul>` : '<p class="mut">Write your reasons in Settings, one per line. They join the daily shield.</p>'}</section></div>`;
 }
-function vSettings(){ const k = S.sub.settings; return `${subnav('settings')}${k === 'history' ? vHistory() : k === 'rules' ? vRules() : k === 'health' ? vHealth() : `<div class="stack">${vSetup()}${planSettingsPanel()}${S.canWrite ? backupPanel() : ''}</div>`}`; }
+function vSettings(){ const k = S.sub.settings; return `${subnav('settings')}${k === 'history' ? vHistory() : k === 'rules' ? vRules() : k === 'health' ? vHealth() : `<div class="stack">${vSetup()}${planSettingsPanel()}${S.canWrite ? backupPanel() : ''}${ntfPanel()}</div>`}`; }
 
 const VIEWS = {today:vTodayIOS, week:vWeek, pay:vPay, money:vMoney, plan:vPlanTab, settings:vSettings};
 let rq = 0;
@@ -6332,7 +6373,13 @@ function render(){
 function toast(msg){ const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => { t.hidden = true; }, 2600); }
 
 /* ---------- writes ---------- */
-async function logChange(kind, text, extra){ if (!S.db) return; try { await S.db.collection('changelog').add({at: new Date().toISOString(), date: iso(today()), kind, text, ...(extra || {})}); } catch (e) { console.warn(e); } }   // extra: {rory, cmp, step, short} for Rory's "Decisions" card
+async function logChange(kind, text, extra){ if (!S.db) return; const x = {...(extra || {})}, tell = tellOf(kind, text, x); delete x.tell; try { await S.db.collection('changelog').add({at: new Date().toISOString(), date: iso(today()), kind, text, ...x, ...(tell ? {tell} : {})}); } catch (e) { console.warn(e); } }   // extra: {rory, cmp, step, short} for Rory's "Decisions" card; {tell, cats} for the phones
+/* who is told on the phone (the app's notifications): each History line carries its kind (tell) and the database tells the right person:
+   Rory everything below, Thiago Rory's answers (the database writes those). An explicit tell wins ('' tells nobody). */
+const TELL = {spending: 'buys', transfer: 'moves', card: 'moves', bill: 'moves', loan: 'decided', decision: 'decided'};
+const tellOf = (kind, text, x) => 'tell' in x ? x.tell : x.step === 'ask' ? 'asks' : x.rory ? 'decided' : /^(Deleted|Undid|Undone|Removed)\b/.test(text) ? 'edits' : TELL[kind] || '';
+const spendTell = (lines, from) => from === 'bills' ? {tell: 'pots'} : from !== 'card' && lines.every(([c]) => ESS_CATS.includes(c))   // the shop, cigarettes and drinks wait for Rory's evening summary, with their totals
+  ? {tell: 'shop', cats: lines.reduce((o, [c, a]) => ({...o, [c]: Math.round(((o[c] || 0) + num(a)) * 100) / 100}), {})} : {tell: 'buys'};
 /* every bill decision says whether Rory was in on it; his report shows it */
 const AGREE_TXT = {yes: ' · decided with Rory', no: ' · Rory not asked yet', na: ' · not a choice'};
 function billAgreeNeeded(b){ if (!b) return false; if (!b._id) return true; const o = S.bills.find(x => x.id === b._id) || {}; return num(b.amount) > num(o.amount) + .005 || (o.active === false && b.active !== false) || !!S.confirmDel; }
@@ -6467,7 +6514,7 @@ async function cardAdd(type, src){
       await S.db.collection('spending').add({date: iso(today()), what: doc.note, amount, who: f.who, cat: f.cat || 'Other', paidFrom: 'card', kind: f.kind, told: f.told, note: `Charged to the card on ${dshort(pd(doc.date))}`, sched: id, chargeOn: doc.date, at: doc.at});
     } else await S.db.collection('cardlog').add(doc);
     const T = {balance:`AIB card balance: ${money(amount)}${CB && doc.note ? ` (${doc.note})` : ''}`, payment:`Extra card payment ${money(amount)}${doc.note ? ` (${doc.note})` : ''}`, refund:`Refund to the card ${money(amount)}${doc.note ? ` (${doc.note})` : ''}`, scheduled:`Upcoming card charge ${money(amount)} on ${dshort(pd(doc.date))}${doc.note ? ` (${doc.note})` : ''}, logged as a purchase: ${WHO[f.who] || ''} · ${KIND[f.kind] || ''} · Rory knew: ${TOLD[f.told] ? TOLD[f.told].toLowerCase() : ''}`};
-    await logChange('card', T[type]);
+    await logChange('card', T[type], {tell: type === 'balance' ? '' : type === 'scheduled' ? 'buys' : 'moves'});
     S.f[src] = {date: iso(today()), amount: '', note: ''}; toast('Saved'); render();
   } catch (e) { writeErr(e); }
 }
@@ -6488,7 +6535,7 @@ async function spendSave(prefill){
   if (ch){ doc.sched = ch.id; doc.chargeOn = ch.date; doc.paidFrom = 'card'; }   // a pre-order: the card charge is already counted on its date
   try {
     await S.db.collection('spending').add(doc);
-    await logChange('spending', `Purchase: ${doc.what} ${money(amount)} · ${WHO[doc.who]} · ${KIND[doc.kind] || doc.kind} · from ${ACC[doc.paidFrom] ? ACC[doc.paidFrom].short : doc.paidFrom}${doc.paidFrom === 'bills' ? ' (rule 1: to be put back)' : ''}${doc.kind === 'unknown' ? '' : ` · Rory knew: ${TOLD[doc.told] ? TOLD[doc.told].toLowerCase() : doc.told}`}${ch ? ` · charged to the card on ${dshort(pd(ch.date))}` : ''}`);
+    await logChange('spending', `Purchase: ${doc.what} ${money(amount)} · ${WHO[doc.who]} · ${KIND[doc.kind] || doc.kind} · from ${ACC[doc.paidFrom] ? ACC[doc.paidFrom].short : doc.paidFrom}${doc.paidFrom === 'bills' ? ' (rule 1: to be put back)' : ''}${doc.kind === 'unknown' ? '' : ` · Rory knew: ${TOLD[doc.told] ? TOLD[doc.told].toLowerCase() : doc.told}`}${ch ? ` · charged to the card on ${dshort(pd(ch.date))}` : ''}`, spendTell([[doc.cat, amount]], doc.paidFrom));
     if (!prefill) S.f.spend = {date: iso(today()), what: '', amount: '', cat: '', paidFrom: (f.paidFrom === 'card' && f.sched) || f.paidFrom === 'bills' ? 'joint' : f.paidFrom, who: '', kind: 'need', told: 'before', note: ''};
     toast('Purchase logged'); S.todayOpen = ''; render();
   } catch (e) { writeErr(e); }
@@ -6677,7 +6724,7 @@ document.addEventListener('click', async e => {
     case 'sheetBg': if (e.target === b){ S.todayOpen = ''; S.err = ''; render(); } break;
     case 'todoAll': S.todoAll = !S.todoAll; render(); break;
     case 'histMore': S.histN = (S.histN || 40) + 40; render(); break;
-    case 'wkSent': { const wsI = S.reportWeek || iso(weekStartOf(today())); await weekUpdate(wsI, {sent: iso(today())}); await logChange('transfer', `Weekly report for ${weekLabel(pd(wsI))} sent to Rory`); toast('Marked as sent'); break; }
+    case 'wkSent': { const wsI = S.reportWeek || iso(weekStartOf(today())); await weekUpdate(wsI, {sent: iso(today())}); await logChange('transfer', `Weekly report for ${weekLabel(pd(wsI))} sent to Rory`, {tell: 'report'}); toast('Marked as sent'); break; }
     case 'goSetup': go('setup'); break;
     case 'seg': { const f = b.dataset.form; (S.f[f] ||= {})[b.dataset.key] = b.dataset.val; render(); break; }
     case 'billNew': S.billOpen = true; S.err = ''; S.confirmDel = false; S.f.bill = {freq: 'monthly', account: 'bills', kind: 'debit', active: true, cat: 'auto'}; render(); break;
@@ -6840,6 +6887,10 @@ document.addEventListener('click', async e => {
     case 'planCancel': S.f.plan = null; S.err = ''; render(); break;
     case 'planTog': case 'planRule': case 'planInvest': case 'planExtra': case 'planEfToCard': case 'planCardToEf': await planAction(a, b); break;
     case 'setSave': setSave(); break;
+    case 'ntfOn': ntfDo(n => n.on(S.canWrite ? 'Thiago’s phone' : 'Rory’s phone'), st => { S.ntf.state = st; return st === 'on' ? 'Notifications on for this phone' : ''; }); break;
+    case 'ntfOff': ntfDo(n => n.off(), st => { S.ntf.state = st; return 'Off for this phone'; }); break;
+    case 'ntfTest': ntfDo(n => n.test(), k => k ? 'Sent: it arrives in a few seconds' : 'Turn notifications on for this phone first'); break;
+    case 'ntfSave': ntfSave(); break;
     case 'setCancel': S.f.set = null; S.err = ''; render(); break;
   }
 });
@@ -6855,6 +6906,8 @@ render();
   if (!db){ S.noDb = true; render(); return; }
   S.db = db;
   useCap('user').then(async u => { if (!u) return; try { const c = await u.can('data.write'); if (c === false){ S.canWrite = false; render(); } } catch (e) {} try { if (!S.canWrite && await u.can('answer.own') === true){ S.canAnswer = true; render(); } } catch (e) {} });   // Rory's own account can answer Thiago's questions, nothing else
+  useCap('notify').then(n => { if (n) ntfLoad(n); });   // only in our own app: notifications on this phone
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && S.ntf) S.ntf.api.state().then(st => { if (S.ntf && st !== S.ntf.state){ S.ntf.state = st; render(); } }).catch(() => {}); });   // back from the iPhone's Settings
   const onErr = e => { console.warn(e); if (e && e.code === 'revoked'){ S.noDb = true; render(); } };
   db.doc('config/settings').onSnapshot(s => { S.settings = s.exists ? {...s.data()} : {}; S.got.settings = true; sched(); }, onErr);
   db.doc('config/plan').onSnapshot(s => { S.plan = s.exists ? {...s.data()} : {}; S.got.plan = true; sched(); }, onErr);

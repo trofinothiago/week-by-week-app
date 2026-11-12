@@ -105,6 +105,10 @@ r = await as('authenticated', R, `insert into push_prefs (data) values ('{"diges
 ok('a time that doesn’t exist is refused', !!r.err);
 r = await as('authenticated', R, `insert into push_prefs (data) values ('{"edits":"evening","digestAt":"20:30"}')`);
 ok('Rory saves his choices', !r.err, r.msg);
+r = await as('authenticated', R, `insert into push_prefs (data) values ('{"edits":"evening","digestAt":"20:30"}') on conflict (user_id) do update set data = excluded.data`);
+ok('saving again (the app’s upsert) replaces his own row', !r.err, r.msg);
+r = await as('authenticated', T, `insert into push_prefs (user_id, data) values ($1, '{"buys":"off"}') on conflict (user_id) do update set data = excluded.data`, [R]);
+ok('Thiago can’t save choices onto Rory’s row', !!r.err, r.err);
 r = await as('authenticated', R, `select push_my_prefs() as p`);
 ok('his choices win, the rest stays default', r.rows[0].p.edits === 'evening' && r.rows[0].p.digestAt === '20:30' && r.rows[0].p.buys === 'now');
 r = await as('authenticated', T, `select * from push_prefs`);

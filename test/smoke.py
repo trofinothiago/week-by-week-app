@@ -18,8 +18,8 @@ if A.backup:
 else:
     B = {'app': 'Week by Week', 'kind': 'backup', 'format': 1, 'savedAt': '2026-11-08T18:00:00.000Z',
          'config': {'settings': {'incomeThiago': 300, 'incomeRory': 500, 'transferBills': 390, 'cardWeekly': 100}, 'plan': {'efWeekly': 25}, 'facts': {}, 'advice': {}, 'prep': {}, 'energy': {}, 'health': {}},
-         'weeks': {}, 'bills': [{'id': 'rent1', 'name': 'Mortgage', 'amount': 900, 'frequency': 'monthly', 'dueDay': 1, 'account': 'bills', 'active': True, 'category': 'Housing'}],
-         'spending': [{'id': 's1', 'date': '2026-11-07', 'amount': 12.5, 'category': 'Groceries', 'who': 'both', 'from': 'joint', 'kind': 'need'}],
+         'weeks': {}, 'bills': [{'id': 'rent1', 'name': 'Mortgage', 'amount': 900, 'freq': 'monthly', 'dueDay': 1, 'account': 'bills', 'active': True, 'cat': 'Housing', 'kind': 'debit'}],
+         'spending': [{'id': 's1', 'date': '2026-11-07', 'what': 'Aldi', 'amount': 12.5, 'cat': 'Groceries', 'who': 'both', 'paidFrom': 'joint', 'kind': 'need', 'told': 'before'}],
          'cardlog': [], 'wishlist': [], 'changelog': [], 'wise': [], 'checks': [], 'klarna': [], 'loans': [], 'assets': [], 'moves': [], 'compare': [], 'prep': []}
 seed = {'config': {k: v for k, v in B['config'].items() if v}, 'weeks': {k: {x: y for x, y in v.items() if x != 'id'} for k, v in B.get('weeks', {}).items()}}
 for k, v in B.items():
@@ -35,9 +35,9 @@ def check(name, ok, info=''):
 
 with sync_playwright() as p:
     br = p.chromium.launch()
-    def open_as(role, path='index.html', width=390, dark=False, hash=''):
-        ctx = br.new_context(viewport={'width': width, 'height': 860}, color_scheme='dark' if dark else 'light')
-        ctx.add_init_script('window.__SEED__ = ' + json.dumps(seed) + '; window.__ROLE__ = ' + json.dumps(role) + ';')
+    def open_as(role, path='index.html', width=390, dark=False, hash='', ua=None, init=''):
+        ctx = br.new_context(viewport={'width': width, 'height': 860}, color_scheme='dark' if dark else 'light', **({'user_agent': ua} if ua else {}))
+        ctx.add_init_script('window.__SEED__ = ' + json.dumps(seed) + '; window.__ROLE__ = ' + json.dumps(role) + ';' + init)
         ctx.route('**/*', lambda r: r.continue_() if r.request.url.startswith(BASE) else r.abort())     # nothing leaves this machine
         ctx.route('**/app/config.js*', lambda r: r.fulfill(body=FAKE, content_type='text/javascript'))   # the fake Supabase instead of the real one (the later route wins)
         pg = ctx.new_page(); errs = []
@@ -177,6 +177,18 @@ with sync_playwright() as p:
                 if dark and w == 375: shot(pg, path.split('.')[0] + '-dark')
                 ctx.close()
     check('the sign-in and account screens fit the phone (375 and 430 px, light and dark), with the light or dark Four pots icon', not bad, bad)
+
+    # 8. notifications: an iPhone in a Safari tab is told to open the app from the Home Screen; the service worker shows what is pushed
+    IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'
+    ctx, pg, errs = open_as('viewer', ua=IPHONE, init='delete window.PushManager;')   # Safari in a tab has no PushManager
+    pg.wait_for_timeout(600); t = ev(pg, "() => document.getElementById('view').innerText")
+    check('notifications: Rory on his iPhone in Safari is told to open the app from the Home Screen first', 'Add to Home Screen' in t and 'Turn on for this phone' not in t and not sideways(pg), t[t.find('Notifications'):][:300] if 'Notifications' in t else t[-300:])
+    shot(pg, 'rory-notify-install'); ctx.close()
+    ctx, pg, errs = open_as('editor')   # the real service worker in a real browser: it registers for the whole app and starts (what it does with a message: test/sw_test.mjs)
+    st = ev(pg, "async () => { await navigator.serviceWorker.register('sw.js', {scope: './'}); const r = await navigator.serviceWorker.ready; return {scope: r.scope, active: !!r.active, state: r.active && r.active.state}; }")
+    check('the service worker registers for the whole app and starts', st['active'] and st['scope'] == BASE, st)
+    check('no errors with the service worker', not errs, errs)
+    ctx.close()
 
     br.close()
 srv.shutdown()
