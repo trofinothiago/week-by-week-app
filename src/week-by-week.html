@@ -203,13 +203,6 @@ details summary{cursor:pointer;font-weight:600}
 .catrow .bar i{display:block;height:100%;background:var(--joint);border-radius:999px}
 @media (max-width:480px){.catrow{grid-template-columns:minmax(0,1fr) auto}.catrow .bar{grid-column:1/-1;grid-row:2}}
 /* transfers */
-.flowmap{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1.3fr);gap:10px;align-items:center}
-.fcol{display:grid;gap:8px;min-width:0}
-.fbox{border:1px solid var(--rule);border-left:4px solid var(--c);border-radius:8px;padding:8px 10px;background:var(--bg);display:grid;gap:1px;min-width:0}
-.fbox span{font-size:.86rem;color:var(--muted)}
-.fbox b{font:600 1.02rem var(--f-mono);font-variant-numeric:tabular-nums}
-.farrow{font:600 1.4rem var(--f-mono);color:var(--muted);text-align:center}
-@media (max-width:720px){.flowmap{grid-template-columns:minmax(0,1fr)}.farrow{transform:rotate(90deg)}}
 .xsteps{list-style:none;margin:0;padding:0;display:grid;gap:10px;counter-reset:x}
 .xstep{counter-increment:x;display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:4px 12px;align-items:start;border:1px solid var(--rule);border-radius:10px;padding:12px;background:var(--sheet)}
 .xstep::before{content:counter(x);grid-row:span 4;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:var(--ink);color:var(--sheet);font:700 .9rem var(--f-mono)}
@@ -3567,7 +3560,7 @@ function setFormFrom(s){ const o = {}; SETF.forEach(([k]) => { o[k] = has(s[k]) 
 
 /* ---------- render ---------- */
 /* ---------- one Vault for all future bills, and money we can't explain ---------- */
-const VAULT_ONE = 'Bills Ahead', EF_VAULT = 'Emergency Fund', BILLS_POCKET = 'Bills';
+const VAULT_ONE = 'Bills Ahead';
 const vaultOne = () => (st().vaultMode || 'one') === 'one';
 const vaultLabel = b => vaultOne() ? `Vault · ${VAULT_ONE}` : `Vault · ${b.name}`;
 function vaultShare(b){ const all = vaultBills(), tot = all.reduce((t, x) => t + weeklyEq(x), 0); return tot > 0 ? weeklyEq(b) / tot : 0; }
@@ -3585,18 +3578,6 @@ async function unkSave(prefill){
   if (!needDb()) return; S.err = '';
   const doc = {date, what: 'Unexplained difference', amount, cat: 'Unexplained', paidFrom: f.paidFrom || 'joint', who: 'both', kind: 'unknown', told: 'before', note: String(f.note || '').trim(), at: new Date().toISOString()};
   try { await S.db.collection('spending').add(doc); await logChange('check', `Logged ${money(amount)} missing from the ${doc.paidFrom === 'card' ? 'AIB card' : 'Joint account'} that we couldn’t explain${doc.note ? ` (${doc.note})` : ''}`, {tell: 'buys'}); S.f.unk = {date: iso(today()), paidFrom: 'joint'}; toast('Logged as unexplained'); render(); } catch (e) { writeErr(e); }
-}
-function revolutSetup(){
-  const fl = flow(), vs = vaultBills(), one = vaultOne(), p = PL();
-  const rows = [
-    ['Joint account', 'Pocket', BILLS_POCKET, `Direct debits only. ${money(fl.tB)} a week.`, true],
-    ...(vs.length ? (one ? [['Joint account', 'Vault', VAULT_ONE, `Every bill that doesn’t come monthly (${vs.map(b => b.name).join(', ')}). ${money(fl.tV)} a week.`, true]] : vs.map(b => ['Joint account', 'Vault', b.name, `${money(b.amount)} ${freqText(b).toLowerCase()}.`, true])) : []),
-    ['Joint account', 'Vault', EF_VAULT, num(p.efWeekly) > 0 ? `Real emergencies only. ${money(p.efWeekly)} a week.` : 'Real emergencies only. Create it when the plan starts the emergency fund.', num(p.efWeekly) > 0 || has(p.efBalance)],
-    ['AIB', 'Savings account', 'AIB savings', `Receives ${money(fl.tC)} a week and pays the AIB credit card.`, true]];
-  return `<section class="panel"><header><h2>Set up in Revolut and AIB</h2><span class="mut" style="font-size:.85rem">Use these exact names, so the app and the system match</span></header>
-    <div class="tablewrap"><table><thead><tr><th>Where</th><th>Type</th><th>Name it</th><th>What it’s for</th></tr></thead><tbody>
-    ${rows.map(([w, t, n, why, now]) => `<tr${now ? '' : ' class="off"'}><td>${esc(w)}</td><td>${esc(t)}</td><td><b>${esc(n)}</b></td><td>${esc(why)}</td></tr>`).join('')}</tbody></table></div>
-    ${vs.length ? `<p class="tip">${one ? `<b>Why one Vault:</b> one transfer a week instead of ${vs.length}, and one balance to copy in the money check. The system keeps track of how much of “${VAULT_ONE}” belongs to each bill (see Money → Bills), and tells you how much to take out before each one.` : 'One Vault per bill. You can switch to a single Vault in Settings: fewer transfers each week, same tracking.'}</p>` : ''}</section>`;
 }
 
 /* ---------- weekly card payments: whatever we could pay that week ---------- */
@@ -6186,27 +6167,13 @@ function transfersPanel(ws){
     ${S.canWrite ? `<div class="actions"><button class="btn" data-act="amtSave" data-w="${wsI}">Save the real amounts</button><span class="mut" style="font-size:.88rem">Only if a transfer wasn’t the planned amount. Leave a box empty when it was.</span></div>` : ''}
     ${moves}</div></details></section>`;
 }
-function flowMapHTML(fl){
-  return `<div class="flowmap" role="img" aria-label="Money flow">
-    <div class="fcol"><div class="fbox c-personal"><span>Rory’s personal</span><b>${money(fl.toJointRory)}</b></div><div class="fbox c-personal"><span>Thiago’s personal</span><b>${money(fl.toJointThiago)}</b></div></div>
-    <div class="farrow" aria-hidden="true">→</div><div class="fcol"><div class="fbox c-joint"><span>Joint account</span><b>${money(fl.jointIn)}</b></div></div>
-    <div class="farrow" aria-hidden="true">→</div>
-    <div class="fcol"><div class="fbox c-bills"><span>Bills Pocket</span><b>${money(fl.tB)}</b></div>${fl.vaults.length ? `<div class="fbox c-bills"><span>Vaults (${fl.vaults.length})</span><b>${money(fl.tV)}</b></div>` : ''}${fl.tE > 0 ? `<div class="fbox c-pocket"><span>Emergency fund</span><b>${money(fl.tE)}</b></div>` : ''}<div class="fbox c-pocket"><span>AIB savings → card</span><b>${money(fl.tC)}</b></div><div class="fbox c-joint"><span>Stays in Joint</span><b>${money(fl.jointDay)}</b></div></div></div>`;
-}
 function vTransfersPage(){
-  const fl = flow(), steps = transferSteps();
-  if (!fl.configured) return `<div class="stack">${addPanel(false)}${movesPanel()}<section class="panel"><header><h2>How money moves every week</h2></header>${emptyBox('Add both incomes and the weekly transfers in Settings first.', 'goSetup', 'Open Settings')}</section>${vWise()}</div>`;
+  const fl = flow();
+  if (!fl.configured) return `<div class="stack">${addPanel(false)}${movesPanel()}<section class="panel"><header><h2>Weekly transfers</h2></header>${emptyBox('Add both incomes and the weekly transfers in Settings first.', 'goSetup', 'Open Settings')}</section>${vWise()}</div>`;
   const mv = dueMoves(today(), 27);
   return `<div class="stack">
     ${addPanel(false)}
     ${movesPanel()}
-    ${revolutSetup()}
-    <section class="panel"><header><h2>How money moves between our accounts</h2><span class="mut" style="font-size:.85rem">Every week, in this order</span></header>
-      ${flowMapHTML(fl)}
-      <div class="ledger">${steps.map((x, i) => `<div class="lrow"><span class="d">${i + 1}</span><span class="n"><b>${esc(x.from)} → ${esc(x.to)}</b> <small>${esc(x.when)} · ${esc(x.note)}</small></span><span class="a">${x.amount == null ? 'Balance' : money(x.amount)}</span></div>`).join('')}</div>
-      <div class="kv"><span>Arrives from both paydays</span><span>${money(fl.jointIn)}</span><span>Bills Pocket</span><span>−${money(fl.tB)}</span>${fl.vaults.length ? `<span>Vaults</span><span>−${money(fl.tV)}</span>` : ''}${fl.tE > 0 ? `<span>Emergency fund</span><span>−${money(fl.tE)}</span>` : ''}<span>AIB savings</span><span>−${money(fl.tC)}</span><span><b>Stays in the Joint account for the week</b></span><span><b>${money(fl.jointDay)}</b></span><span>Shop and cigarettes</span><span>−${money(fl.needJoint)}</span><span><b>Free money for wants</b></span><span><b>${money(fl.free)}</b></span></div>
-      <p class="tip">Set each step as a weekly recurring transfer in Revolut, so nothing depends on memory. Tick them in Week, and enter the real amount there if one was different.</p>
-      <div class="actions"><button class="btn" data-act="tab" data-to="week">Tick this week’s transfers</button></div></section>
     <section class="panel"><header><h2>Coming up: money to move before a bill</h2><span class="mut" style="font-size:.85rem">Next 4 weeks</span></header>
       <p class="mut">Bills saved in a Vault, or paid in Brazil, need one extra move before they are due.</p>
       ${mv.length ? `<ul class="xsteps plain">${mv.map(m => `<li class="xstep${moveDone(m) ? ' done' : ''}"><div class="route">${esc(m.from)} <span aria-hidden="true">→</span> <span class="acc c-${m.abroad ? 'personal' : 'bills'}">${esc(m.to)}</span></div><div class="amt">${money(m.amount)}</div>

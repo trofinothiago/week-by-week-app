@@ -218,6 +218,8 @@ with sync_playwright() as p:
       S.health = {...(keep || {}), suggestions: []}; render(); r.noIdeas = !document.getElementById('view').innerText.includes('Ideas waiting'); S.health = keep; S.tab = 'week'; render(); return r; }""")
     hw = ev("() => { S.tab = 'settings'; S.sub.settings = 'setup'; render(); const t = document.getElementById('view').innerText, r = {gone: !/How it works|What updates on its own/.test(t), setup: t.includes('Save setup') && t.includes('Backup')}; S.tab = 'week'; render(); return r; }")
     check('Setup (cleaner): the two long explanations are gone; the setup form and the backup stay', hw['gone'] and hw['setup'], hw)
+    tp = ev("() => { S.tab = 'money'; S.sub.money = 'transfers'; render(); const t = document.getElementById('view').innerText, r = {gone: !/Set up in Revolut and AIB|How money moves between our accounts/.test(t), kept: ['Add money', 'Move money', 'Coming up', 'Transfers to Brazil'].every(x => t.includes(x))}; S.tab = 'week'; render(); return r; }")
+    check('Transfers (cleaner): the set-up table and the money map are gone; Add money, moves, money before a bill and Brazil stay', tp['gone'] and tp['kept'], tp)
     check('System (cleaner): the self-check stays; Claude’s check is one line with the detail folded; only ideas waiting show, keeping their number; What’s new folded', sy['one'] and sy['three'] and not sy['built'] and sy['rowHidden'] and sy['newsFolded'] and sy['selfCheck'] and sy['noIdeas'], sy)
     ev("() => render()")
     ev("() => { S.canWrite = false; render(); }"); rv = view()
