@@ -206,6 +206,10 @@ with sync_playwright() as p:
     ts = ev(TOAST); check('the toast shows over an open sheet too', ts['top'], ts)
     ev("() => { S.todayOpen = ''; S.tab = 'week'; render(); }")
     check('Week: report for Rory on the page', 'Download PDF' in view() or 'PDF' in view())
+    wk = ev("() => { const p = document.querySelector('#view .preview'), d = p && p.closest('details'); return {steps: [...document.querySelectorAll('#view .panel')][0].innerText, folded: !!d && !d.open, old: /The Joint account this week|Monday morning/.test(document.getElementById('view').innerText), screens: document.documentElement.scrollHeight / window.innerHeight}; }")
+    check('Week (cleaner): the three steps show at the top, Rory’s report is folded behind one tap, the old Joint-only box is gone', all(x in wk['steps'].lower() for x in ['transfers', 'money check', 'report to rory']) and wk['folded'] and not wk['old'], wk)
+    ev("() => { document.querySelector('#view .preview').closest('details').open = true; }"); check('Week: the folded report opens and draws', 'What we owe' in view() and not any(s in view() for s in BAD))
+    ev("() => render()")
     ev("() => { S.canWrite = false; render(); }"); rv = view()
     rfit = ev(PROBE); check("Rory's view fits the phone screen", not rfit, rfit[:8])
     check("Rory's view: the report only, no forms (but the box for his own answers and his notification choices)", not ev("() => [...document.querySelectorAll('#view input, #view select')].some(x => !x.closest('.cmpans, .ntf'))") and not any(s in rv for s in BAD))
@@ -764,8 +768,8 @@ with sync_playwright() as p:
           const E = cmpEval(c), g = id => E.rows.find(r => r.p.id === id); return {svc: cmpServices(c).map(x => x.key), small: g('s').missNeed, big: g('b').missNeed}; }""")
         check('Compare: a storage size with no name ("2TB") is one Storage service, and a bigger size covers a smaller need', g['svc'] == ['music', 'storage'] and g['small'] and not g['big'], g)
         j = ev("""() => { const out = []; for (const b of activeBills().filter(x => x.account === 'joint' && x.vault)){ const d = occurrences(b, today(), addDays(today(), 400))[0]; if (!d) continue; const ws = weekStartOf(d), we = addDays(ws, 6);
-            out.push({b: b.name, inOut: jointOut(ws, we).some(x => x.name === b.name), week: Math.abs(jointWeek(ws).bills - jointOut(ws, we).reduce((t, x) => t + x.amt, 0)) < .005}); } return out; }""")
-        if j: check('Joint account: a Joint bill kept in the Vault is paid by the Vault, not taken from the Joint’s week', all(not x['inOut'] and x['week'] for x in j), j)
+            out.push({b: b.name, inOut: jointOut(ws, we).some(x => x.name === b.name)}); } return out; }""")
+        if j: check('Joint account: a Joint bill kept in the Vault is paid by the Vault, not taken from the Joint’s week', all(not x['inOut'] for x in j), j)
         else: notes['cleanupJointVault'] = 'no Joint bill kept in the Vault'
         e = ev("""async () => { const t = today(); let d = null; for (let k = 1; k <= 31 && !d; k++){ const x = addDays(t, k); if (pocketOut(x, x).length) d = x; } if (!d) return null;
             const c = sortedChecks().filter(x => has(x.bills)).pop();

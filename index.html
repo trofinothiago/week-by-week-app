@@ -952,7 +952,7 @@ const S = {
   f:{
     bill:null, set:null, plan:null,
     bal:{date:'', amount:''}, pay:{date:'', amount:'', note:''}, sch:{date:'', amount:'', note:''},
-    spend:{date:'', what:'', amount:'', cat:'', paidFrom:'joint', who:'', kind:'need', told:'before', note:''}, as:{name:'', kind:'cash', value:'', date:'', side:'own'}, unk:{date:'', paidFrom:'joint'}, jo:{},
+    spend:{date:'', what:'', amount:'', cat:'', paidFrom:'joint', who:'', kind:'need', told:'before', note:''}, as:{name:'', kind:'cash', value:'', date:'', side:'own'}, unk:{date:'', paidFrom:'joint'},
     check:{what:'', price:'', paidFrom:'joint', who:'', need:'', told:''}, add:{date:'', amount:'', to:'joint', who:'', how:'', note:''},
     dec:{text:''}, what:{extra:''}, note:{}, wise:{date:'', eur:'', fee:'', brl:'', purpose:'Psychologist'}, chk:{date:'', joint:'', bills:'', vaults:'', ef:'', aib:'', card:'', note:''}, kl:{what:'', total:'', date:'', n:'3', every:'month', first:'', paidFrom:'card', who:''}, wi:{what:'', monthly:'', months:'', start:''}, wiRm:{}, mv:{date:'', from:'', to:'', amount:'', note:'', kind:'', bill:''}, en:{upTo:'', kwh:'', eur:''}, enb:{}, ln:{what:'', lender:'', financed:'', instalment:'', n:'', every:'month', start:'', first:'', paidFrom:'bills', lastAmount:'', who:'both', note:''}
   }
@@ -3613,31 +3613,6 @@ const VAULT_ONE = 'Bills Ahead', EF_VAULT = 'Emergency Fund', BILLS_POCKET = 'Bi
 const vaultOne = () => (st().vaultMode || 'one') === 'one';
 const vaultLabel = b => vaultOne() ? `Vault · ${VAULT_ONE}` : `Vault · ${b.name}`;
 function vaultShare(b){ const all = vaultBills(), tot = all.reduce((t, x) => t + weeklyEq(x), 0); return tot > 0 ? weeklyEq(b) / tot : 0; }
-function jointWeek(ws){
-  const wsI = iso(ws), we = addDays(ws, 6), w = S.weeks[wsI] || {}, tr = w.transfers || {}, am = w.amounts || {};
-  const amt = x => stepSent(wsI, x);
-  const steps = transferSteps().filter(x => x.amount != null && tr[x.id]);
-  const inS = steps.filter(x => STEP_IN[x.id]).reduce((t, x) => t + amt(x), 0);
-  const outS = steps.filter(x => !STEP_IN[x.id] && x.fc === 'joint').reduce((t, x) => t + amt(x), 0);
-  const spend = sumAmt(weekSpending(ws, 'joint'));
-  const bills = jointOut(ws, we).reduce((t, x) => t + x.amt, 0);
-  const prevChk = has(w.jointOpen) ? null : sortedChecks().filter(c => has(c.joint) && c.date >= iso(addDays(ws, -2)) && c.date <= iso(addDays(ws, -1))).pop() || null;   // the weekend's money check is Monday's starting balance
-  const net = inS - outS - spend - bills, open = has(w.jointOpen) ? num(w.jointOpen) : prevChk ? num(prevChk.joint) : null;
-  const ck = sortedChecks().filter(c => inWeek(c.date, ws) && has(c.joint)).pop() || null;
-  const expected = open == null ? null : open + net, real = ck ? num(ck.joint) : null;
-  return {wsI, inS, outS, spend, bills, net, open, openFrom: prevChk ? prevChk.date : null, expected, real, ck, gap: expected != null && real != null ? Math.round((real - expected) * 100) / 100 : null, ticked: steps.length};
-}
-function jointWeekPanel(ws){
-  const J = jointWeek(ws), wsI = J.wsI, sg = v => `${v < 0 ? '−' : '+'}${money(Math.abs(v))}`;
-  const f = S.f.jo || {};
-  return `<div class="formbox"><h3>The Joint account this week</h3>
-    <div class="kv"><span>Paydays in (ticked in step 1)</span><span>${sg(J.inS)}</span><span>Sent on to the Bills Pocket, Vaults and AIB (ticked)</span><span>${sg(-J.outS)}</span><span>Purchases logged from the Joint account</span><span>${sg(-J.spend)}</span>${J.bills ? `<span>Bills paid from the Joint account</span><span>${sg(-J.bills)}</span>` : ''}<span><b>The Joint account should have moved by</b></span><span><b>${sg(J.net)}</b></span></div>
-    ${S.canWrite ? `<div class="form">${field('jo', 'open', 'Joint balance on Monday morning (€)', {money: true, ph: J.open != null ? String(J.open) : '0.00', hint: J.openFrom ? `Taken from the money check of ${dshort(pd(J.openFrom))}; type it only to correct it` : 'Main balance, before the paydays'})}</div><div class="actions"><button class="btn small" data-act="joSave" data-w="${wsI}">Save</button></div>` : ''}
-    ${J.expected != null ? `<p>So the Joint account should hold <b class="mono">${money(J.expected)}</b> now.${J.real != null ? ` The money check says <b class="mono">${money(J.real)}</b>.` : ' Do the money check to compare.'}</p>` : '<p class="mut" style="font-size:.9rem">Add the Monday balance to see what the Joint account should hold now. From next week, the money check does this on its own for every account.</p>'}
-    ${J.gap != null ? (Math.abs(J.gap) < 1 ? '<p class="pos"><b>✓ It matches.</b></p>' : `<p class="${J.gap < 0 ? 'neg' : ''}"><b>${J.gap < 0 ? `${money(-J.gap)} is missing` : `${money(J.gap)} more than expected`}</b>${J.gap < 0 ? ': a purchase that wasn’t logged, or a bank charge.' : ': a transfer that wasn’t ticked, or money that came in.'}</p>
-      ${S.canWrite && J.gap < 0 ? `<div class="actions"><button class="btn" data-act="unkFill" data-v="${(-J.gap).toFixed(2)}" data-d="${J.ck ? J.ck.date : iso(today())}">I can’t explain it: log ${money(-J.gap)} as unexplained</button></div>` : ''}`) : ''}
-  </div>`;
-}
 function unexplainedForm(){
   if (!S.canWrite) return '';
   const f = S.f.unk || {};
@@ -6293,21 +6268,21 @@ function checkFormPanel(ws){
     ${typed ? `<p>Net position: <b class="mono">${money(checkNet(has(f.card) ? {...f, card: cardOwedFrom('chk', 'card').owed} : f))}</b> <span class="mut">(everything in the accounts minus what the card owes)</span></p>` : ''}
     ${S.err && S.errAt === 'chk' ? `<p class="err">${esc(S.err)}</p>` : ''}
     <div class="actions"><button class="btn strong" data-act="chkSave">${ck ? 'Save another check' : 'Save money check'}</button></div>` : '';
-  const extra = `${jointWeekPanel(ws)}${unexplainedForm()}`;
-  return `<section class="panel"><header><h2><span class="stepn">2</span> Money check</h2>${ck ? `<span class="chip ok">✓ Done ${dshort(pd(ck.date))}</span>` : '<span class="chip idle">Not done yet</span>'}</header>${form}${extra}</section>${vRecon()}`;
+  return `<section class="panel"><header><h2><span class="stepn">2</span> Money check</h2>${ck ? `<span class="chip ok">✓ Done ${dshort(pd(ck.date))}</span>` : '<span class="chip idle">Not done yet</span>'}</header>${form}${unexplainedForm()}</section>${vRecon()}`;
 }
 function vWeek(){
   const cur = weekStartOf(today()), ws = S.reportWeek ? pd(S.reportWeek) : cur, isCur = iso(ws) === iso(cur), fl = flow(), wsI = iso(ws), wk = S.weeks[wsI] || {};
-  const head = `<section class="panel"><header><div class="weeknav"><button class="btn small" data-act="wkPrev" aria-label="Previous week">←</button><b>${weekLabel(ws)}</b><button class="btn small" data-act="wkNext" aria-label="Next week"${isCur ? ' disabled' : ''}>→</button>${isCur ? '' : '<button class="linkbtn" data-act="wkNow">This week</button>'}</div>
-      <button class="btn strong" data-act="pdf"${S.busy ? ' disabled' : ''}>${S.busy ? 'Making the PDF…' : 'Download PDF for Rory'}</button></header>
-    <p class="mut" style="font-size:.92rem">Three steps every week: <b>1</b> do the transfers, <b>2</b> do the money check, <b>3</b> send Rory the report.</p></section>`;
+  const steps = stepsFor(ws), tr = wk.transfers || {}, nDone = steps.filter(x => tr[x.id]).length, ck = sortedChecks().filter(c => inWeek(c.date, ws)).pop();
+  const stepChip = (n, l, ok, part) => `<span class="chip ${ok ? 'ok' : part ? 'warn' : 'idle'}">${ok ? '✓' : n} ${l}</span>`;
+  const head = `<section class="panel"><header><div class="weeknav"><button class="btn small" data-act="wkPrev" aria-label="Previous week">←</button><b>${weekLabel(ws)}</b><button class="btn small" data-act="wkNext" aria-label="Next week"${isCur ? ' disabled' : ''}>→</button>${isCur ? '' : '<button class="linkbtn" data-act="wkNow">This week</button>'}</div></header>
+    <div class="actions">${stepChip(1, `Transfers ${nDone} of ${steps.length}`, steps.length && nDone === steps.length, nDone)}${stepChip(2, 'Money check', !!ck)}${stepChip(3, 'Report to Rory', !!wk.sent)}</div></section>`;
   if (!fl.configured) return `<div class="stack">${head}<section class="panel">${emptyBox('Add both incomes and the weekly transfers in Settings first.', 'goSetup', 'Open Settings')}</section></div>`;
   const D = reportData(ws);
   const note = S.canWrite ? `<div class="fld"><label for="f_note_${wsI}">Note for Rory <small>Shown on page 1. Keep it short.</small></label><textarea id="f_note_${wsI}" data-f="note.${wsI}" placeholder="Anything Rory should know this week, in your own words.">${esc(S.f.note[wsI] ?? wk.note ?? '')}</textarea></div><div class="actions"><button class="btn" data-act="wkNote">Save note</button></div>` : (wk.note ? `<p style="white-space:pre-wrap">${esc(wk.note)}</p>` : '');
   const report = `<section class="panel"><header><h2><span class="stepn">3</span> Report for Rory</h2>${wk.sent ? `<span class="chip ok">✓ Sent ${dshort(pd(wk.sent))}</span>` : S.canWrite ? '<button class="btn small" data-act="wkSent">Mark as sent</button>' : ''}</header>
     ${note}
-    <p class="mut" style="font-size:.88rem">This is exactly what Rory sees: in the PDF, and live when he opens the page with view-only access.</p>
-    <div class="preview">${reportFull(ws, D)}</div>
+    <div class="actions"><button class="btn strong" data-act="pdf"${S.busy ? ' disabled' : ''}>${S.busy ? 'Making the PDF…' : 'Download PDF for Rory'}</button></div>
+    <details><summary>See the report as Rory sees it</summary><div class="preview" style="margin-top:10px">${reportFull(ws, D)}</div></details>
     <details><summary>All the detail behind it (for you, not in the PDF)</summary><div style="margin-top:10px">${reportBackstage(ws, false, D, true)}</div></details></section>`;
   return `<div class="stack">${head}${transfersPanel(ws)}${checkFormPanel(ws)}${report}</div>`;
 }
@@ -6815,8 +6790,6 @@ document.addEventListener('click', async e => {
     case 'decSave': { if (!needDb()) break; const t = String(S.f.dec.text || '').trim(); if (!t) { toast('Write the decision first.'); break; } await logChange('decision', t); S.f.dec.text = ''; toast('Saved to history'); render(); break; }
     case 'gapLog': case 'gapNote': case 'gapUnk': await gapAction(a, b); break;
     case 'unkSave': unkSave(); break;
-    case 'unkFill': await unkSave({amount: b.dataset.v, date: b.dataset.d, paidFrom: 'joint', note: 'The Joint account didn’t match this week'}); break;
-    case 'joSave': { if (!needDb()) break; const v = (S.f.jo || {}).open; if (!has(v)){ toast('Type the Monday balance first.'); break; } await weekUpdate(b.dataset.w, {jointOpen: Math.round(num(v) * 100) / 100}); await logChange('check', `Joint account on Monday of ${weekLabel(pd(b.dataset.w))}: ${money(num(v))}`); S.f.jo = {}; toast('Saved'); break; }
     case 'amtSave': { if (!needDb()) break; const wsI = b.dataset.w;
       { const kA = `${wsI}.aib`; if (S.f.amt && kA in S.f.amt){   // a different amount to AIB savings is a different card payment
           const raw = String(S.f.amt[kA]).trim(), p0 = weekCardPay(wsI); delete S.f.amt[kA];
