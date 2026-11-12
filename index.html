@@ -576,6 +576,7 @@ details > summary{cursor:pointer;font-weight:700;font-family:var(--f-display);pa
 [data-look="ios"] .ios-nav.on{opacity:1}
 /* tab bar */
 [data-look="ios"] .iostabs{display:flex;position:fixed;bottom:0;left:0;right:0;z-index:45;justify-content:space-around;padding:6px 4px calc(6px + env(safe-area-inset-bottom,0px));background:color-mix(in srgb,var(--sheet) 82%,transparent);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);border-top:.5px solid var(--rule)}
+[data-look="ios"] .toast{bottom:calc(75px + env(safe-area-inset-bottom,0px));z-index:61}   /* above the tab bar (63px) and over an open sheet, never under them */
 [data-look="ios"] body.rorymode .iostabs,[data-look="ios"] body.rorymode .ios-nav{display:none}
 
 .iostabs button svg{width:26px;height:26px}

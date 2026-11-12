@@ -198,9 +198,12 @@ with sync_playwright() as p:
     sweep('now')
     ev("() => { S.tab = 'today'; S.todayOpen = ''; render(); }")
     if A.shots: pg.screenshot(path=os.path.join(A.shots, 'today.png'), full_page=True)
+    TOAST = "() => { toast('Sent: it arrives in a few seconds'); const t = document.getElementById('toast'), r = t.getBoundingClientRect(), tabs = document.querySelector('.iostabs'), b = tabs ? tabs.getBoundingClientRect() : null; return {clear: !b || r.bottom <= b.top, top: document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === t}; }"
+    tt = ev(TOAST); check('the toast shows above the tab bar, never under it', tt['clear'] and tt['top'], tt)
     for sheet in ['check', 'log', 'add']:
         ev(f"() => {{ S.tab = 'today'; S.todayOpen = '{sheet}'; render(); }}")
         check(f'Today sheet "{sheet}" opens', ev("() => !!document.querySelector('.ios-sheet')") and not any(s in view() for s in BAD))
+    ts = ev(TOAST); check('the toast shows over an open sheet too', ts['top'], ts)
     ev("() => { S.todayOpen = ''; S.tab = 'week'; render(); }")
     check('Week: report for Rory on the page', 'Download PDF' in view() or 'PDF' in view())
     ev("() => { S.canWrite = false; render(); }"); rv = view()
