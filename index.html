@@ -751,9 +751,6 @@ body.sheet-open{overflow:hidden}
 [data-look="ios"] .xstep .when,[data-look="ios"] .xstep .note{font-size:.8rem}
 [data-look="ios"] .xstep input:not([type=checkbox]){min-height:36px;max-width:130px;padding:6px 10px;font-size:16px}
 [data-look="ios"] .acc{font-size:.68rem}
-[data-look="ios"] .ios-hist .ios-row{cursor:default;grid-template-columns:minmax(0,1fr);gap:4px}
-[data-look="ios"] .ios-hist .ios-row::before{left:14px}
-[data-look="ios"] .ios-hist .meta{display:flex;gap:8px;align-items:center;font-size:.78rem;color:var(--muted)}
 /* Plan → Ready: kit rows with their buttons under the name */
 .lrow.prow{grid-template-areas:"d d" "n n" "b b"}
 .lrow .pbtns{grid-area:b;display:flex;flex-wrap:wrap;gap:4px 18px;justify-content:flex-start}
@@ -776,10 +773,20 @@ body.sheet-open{overflow:hidden}
 .ios-adv b.inl{display:inline;font-size:inherit}
 .tint{color:var(--accent)}
 .sw.sq{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px}
+/* lists that only grow: one short line per entry (like Pay's "Done this week"), each week folded */
+.elist{display:grid;gap:4px}
+.eweek>summary{font-size:.95rem}
+.eline{border-bottom:1px dashed var(--rule)}
+.eline>summary{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:7px 0;font:400 .92rem var(--f-body);list-style:none}
+.eline>summary::-webkit-details-marker{display:none}
+.eline[open]>summary{font-weight:600}
+.ebody{display:grid;gap:8px;justify-items:start;padding:2px 0 12px}
+.ebody .kv{width:100%}
+.ebody .kv span:nth-child(even){font-family:var(--f-body)}
 /* helpers, one setting each: like the style="…" they replaced, they win over a section's own size or spacing */
 .fs85{font-size:.85rem!important} .fs88{font-size:.88rem!important} .fs90{font-size:.9rem!important} .fs92{font-size:.92rem!important} .fs130{font-size:1.3rem!important}
 .mt4{margin-top:4px!important} .mt6{margin-top:6px!important} .mt8{margin-top:8px!important} .mt10{margin-top:10px!important} .mt12{margin-top:12px!important}
-.mb16{margin-bottom:16px!important} .my6{margin:6px 0!important}
+.mb16{margin-bottom:16px!important}
 .fw4{font-weight:400!important} .fw6{font-weight:600!important} .nowrap{white-space:nowrap!important} .prewrap{white-space:pre-wrap!important}
 .grow{flex:1!important;min-width:0!important} .fullrow{grid-column:1/-1!important} .mw150{min-width:150px!important}
 .l0{left:0!important} .l30{left:30%!important} .l80{left:80%!important} .l100{left:100%!important}
@@ -1994,6 +2001,13 @@ function dueMoves(from, days){
   }
   return out.sort((x, y) => x.sendBy - y.sendBy);
 }
+function entryWeeks(list, rows){   // a list that only grows (purchases, the card log, moves, readings, History): one short line per entry like Pay's "Done this week", a tap opens its detail and Delete; this week open, each older week folded with its count (and total when rows carry sum)
+  const by = {}, now = iso(weekStartOf(today())), open = (k, d) => (S.eOpen || {})[k] ?? d;
+  for (const r of rows) if (r.d) (by[iso(weekStartOf(r.d))] ||= []).push(r);
+  return `<div class="elist">${Object.keys(by).sort().reverse().map(k => { const arr = by[k], tot = arr.reduce((t, r) => t + (r.sum || 0), 0), wk = `${list}:${k}`;
+    return `<details class="eweek" data-fold="${wk}"${open(wk, k === now) ? ' open' : ''}><summary>${weekLabel(pd(k))} <span class="mut fw4">· ${arr.length}${arr.some(r => r.sum != null) ? ` · ${money(tot)}` : ''}</span></summary>${arr.map(r => { const ek = `${list}:${r.id}`;
+      return `<details class="eline" data-fold="${ek}"${open(ek, false) ? ' open' : ''}><summary><span>${dshort(r.d)} · ${r.what}</span><span class="mono">${r.amt || ''}</span></summary><div class="ebody">${r.body}</div></details>`; }).join('')}</details>`; }).join('')}</div>`;
+}
 function foldQuiet(busy, open, line, html){   // a card with nothing running or due folds to one line; tapping it opens the same card in place
   return busy ? html : `<section class="panel"><details${open ? ' open' : ''}><summary>${line}</summary><div class="nest">${html}</div></details></section>`;
 }
@@ -2122,8 +2136,8 @@ function mvRules(f){   // what a move means for our rules, said before it's save
 }
 function movesPanel(){
   const f = S.f.mv, step = mvStep(f), rules = f.from && f.to && f.from !== f.to ? mvRules(f) : [];
-  const vb = vaultBills(), since = iso(addDays(today(), -62));
-  const list = S.moves.filter(m => (m.date || '') >= since).sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.at || '').localeCompare(a.at || ''));
+  const vb = vaultBills();
+  const list = S.moves.filter(m => pd(m.date)).sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.at || '').localeCompare(a.at || ''));
   const form = S.canWrite ? `<div class="formbox"><h3>Log a move</h3>
     <div class="form">${field('mv', 'date', 'Date', {type: 'date'})}${field('mv', 'from', 'From', {select: [['', 'Choose'], ...MV_FROM.map(k => [k, mvName(k)])]})}${field('mv', 'to', 'To', {select: [['', 'Choose'], ...MV_TO.map(k => [k, mvName(k)])]})}${field('mv', 'amount', 'Amount (€)', {money: true, ph: '50.00'})}${field('mv', 'note', 'Why', {ph: f.from === 'outside' ? 'Sold the headphones' : 'Short for the shop this week'})}</div>
     ${f.from === 'vaults' && vb.length ? `<div class="fld"><label for="f_mv_bill">Which bill is it for? <small>The Vault only pays its bills</small></label><select id="f_mv_bill" data-f="mv.bill"><option value="">Not for a bill</option>${vb.map(b => `<option value="${esc(b.id)}"${f.bill === b.id ? ' selected' : ''}>${esc(b.name)} · next ${dshort(nextDue(b))}</option>`).join('')}</select></div>` : ''}
@@ -2133,7 +2147,9 @@ function movesPanel(){
   return `<section class="panel" id="movesPanel"><header><h2>Move money between accounts</h2><span class="mut fs85">For moves outside the weekly plan</span></header>
     <p class="mut fs90">Moved money by hand? Log it here so every balance, the free money, the emergency fund, the card and Rory’s report follow. The weekly transfers are ticked in Pay or Week. Money sent to Brazil goes in Wise below.</p>
     ${form}
-    ${list.length ? `<h3>Last two months</h3><div class="ledger">${list.map(m => `<div class="lrow"><span class="d">${dshort(pd(m.date))}</span><span class="n"><b>${esc(isAdd(m) ? addLabel(m) : mvRoute(m))}</b>${m.note ? ` <small>${esc(m.note)}</small>` : ''}${mvBreak(m) ? ` <span class="chip bad">rule ${mvBreak(m)}</span>` : ''}${m.from === 'ef' ? ' <span class="chip warn">emergency fund used</span>' : ''}${m.bill ? ` <small>for ${esc((S.bills.find(b => b.id === m.bill) || {}).name || 'a bill')}</small>` : ''}</span><span class="a">${money(m.amount)} ${S.canWrite ? `<button class="btn small danger" data-act="mvDel" data-id="${esc(m.id)}">${S.confirmMv === m.id ? 'Sure?' : 'Delete'}</button>` : ''}</span></div>`).join('')}</div>` : '<p class="mut">No moves logged yet.</p>'}
+    ${list.length ? `<h3>Every move</h3>${entryWeeks('moves', list.map(m => ({id: m.id, d: pd(m.date), amt: money(m.amount),
+      what: `${esc(isAdd(m) ? addLabel(m) : mvRoute(m))}${mvBreak(m) ? ` <span class="chip bad">rule ${mvBreak(m)}</span>` : ''}${m.from === 'ef' ? ' <span class="chip warn">emergency fund used</span>' : ''}`,
+      body: `${m.note || m.bill ? `<div class="kv">${m.note ? `<span>Why</span><span>${esc(m.note)}</span>` : ''}${m.bill ? `<span>For the bill</span><span>${esc((S.bills.find(b => b.id === m.bill) || {}).name || 'a bill')}</span>` : ''}</div>` : ''}${S.canWrite ? `<button class="btn small danger" data-act="mvDel" data-id="${esc(m.id)}">${S.confirmMv === m.id ? 'Sure?' : 'Delete'}</button>` : ''}`})))}` : '<p class="mut">No moves logged yet.</p>'}
   </section>`;
 }
 async function moveSave(){
@@ -2445,8 +2461,9 @@ function vCard(){
 
   const log = sortedCardlog().reverse();
   const T = {balance:'Balance from AIB', payment:'Extra payment', refund:'Refund', scheduled:'Upcoming charge', interest:'Interest (statement)'};
-  const logHtml = log.length ? `<section class="panel"><header><h2>Card log</h2></header><div class="tablewrap"><table><thead><tr><th>Date</th><th>Entry</th><th>Note</th><th class="r">Amount</th><th></th></tr></thead><tbody>
-    ${log.map(e => `<tr><td class="num">${dshort(pd(e.date))}</td><td>${T[e.type] || e.type}</td><td>${esc(e.note || '')}</td><td class="r num">${e.type === 'payment' || e.type === 'refund' ? '−' : ''}${money(e.amount)}</td><td>${S.canWrite ? `<button class="btn small danger" data-act="cardDel" data-id="${esc(e.id)}">Delete</button>` : ''}</td></tr>`).join('')}</tbody></table></div></section>` : '';
+  const logHtml = log.length ? `<section class="panel"><header><h2>Card log</h2></header>${entryWeeks('card', log.filter(e => pd(e.date)).map(e => ({id: e.id, d: pd(e.date),
+    what: `${T[e.type] || esc(e.type)}${e.note ? ` · ${esc(e.note)}` : ''}`, amt: `${e.type === 'payment' || e.type === 'refund' ? '−' : ''}${money(e.amount)}`,
+    body: `<div class="kv"><span>Entry</span><span>${T[e.type] || esc(e.type)}</span>${e.note ? `<span>Note</span><span>${esc(e.note)}</span>` : ''}</div>${S.canWrite ? `<button class="btn small danger" data-act="cardDel" data-id="${esc(e.id)}">Delete</button>` : ''}`})))}</section>` : '';
   const dz = debts(), monthAgo = iso(addDays(today(), -28));
   const ch = dz.rows.length && (balanceAt(monthAgo) || !cardState()) ? dz.total - debtAt(monthAgo) : null;
   const allDebts = `<section class="panel"><header><h2>All debts</h2><b class="mono fs130">${money(dz.total)}</b></header>
@@ -2520,14 +2537,10 @@ function vSpending(){
     ${thisWeek.length ? `<div class="stats">${Object.entries(byCat).sort((a, b) => b[1] - a[1]).map(([c, v]) => `<div class="stat"><small>${esc(c)}</small><b>${money(v)}</b></div>`).join('')}</div>
     <p>${slipsW.length ? `<span class="chip bad">${slipsW.length} slip${slipsW.length > 1 ? 's' : ''}</span> impulse or not told before buying.` : '<span class="chip ok">Shield held</span> No impulse or hidden purchases logged this week.'}</p>` : '<p class="mut">Nothing logged this week yet.</p>'}</section>`;
 
-  const weeks = {};
-  S.spending.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')).forEach(x => { const d = pd(x.date); if (!d) return; const k = iso(weekStartOf(d)); (weeks[k] ||= []).push(x); });
-  const listHtml = Object.keys(weeks).length ? `<section class="panel"><header><h2>All purchases</h2></header>${Object.keys(weeks).sort().reverse().slice(0, 16).map(k => {
-    const arr = weeks[k];
-    return `<div><h3 class="my6">${weekLabel(pd(k))} <span class="mono mut fs90 fw4">${money(arr.reduce((a, x) => a + num(x.amount), 0))}</span></h3>
-    <div class="tablewrap"><table><thead><tr><th>Date</th><th>Who</th><th>What</th><th>Category</th><th>From</th><th>Kind</th><th>Rory knew</th><th class="r">Amount</th><th></th></tr></thead><tbody>
-    ${arr.map(x => `<tr><td class="num">${dshort(pd(x.date))}</td><td><span class="who ${WHO_C[WHO[x.who] ? x.who : 'unset']}">${esc(WHO[x.who] || '—')}</span></td><td>${esc(x.what)}${x.note ? `<br><small class="mut">${esc(x.note)}</small>` : ''}</td><td>${esc(x.cat || '')}</td><td>${accChip(x.paidFrom)}</td><td>${x.kind === 'unknown' ? '<span class="chip warn">Couldn’t explain</span>' : x.kind === 'impulse' ? '<span class="chip bad">Impulse</span>' : esc(KIND[x.kind] || '')}</td><td>${x.told === 'before' ? 'Before' : `<span class="chip ${x.told === 'no' ? 'bad' : 'warn'}">${esc(TOLD[x.told] || '?')}</span>`}</td><td class="r num">${money(x.amount)}</td><td>${S.canWrite ? `<button class="btn small danger" data-act="spendDel" data-id="${esc(x.id)}">Delete</button>` : ''}</td></tr>`).join('')}</tbody></table></div></div>`;
-  }).join('')}</section>` : '';
+  const buys = S.spending.filter(x => pd(x.date)).sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.at || '').localeCompare(a.at || '')).map(x => ({id: x.id, d: pd(x.date), sum: num(x.amount), amt: money(x.amount),
+    what: `${esc(x.what)}${x.kind === 'unknown' ? ' <span class="chip warn">Couldn’t explain</span>' : x.kind === 'impulse' ? ' <span class="chip bad">Impulse</span>' : ''}${x.told && x.told !== 'before' ? ` <span class="chip ${x.told === 'no' ? 'bad' : 'warn'}">Rory: ${esc(TOLD[x.told] || '?')}</span>` : ''}`,
+    body: `<div class="kv"><span>Who</span><span><span class="who ${WHO_C[WHO[x.who] ? x.who : 'unset']}">${esc(WHO[x.who] || '—')}</span></span><span>Category</span><span>${esc(x.cat || '—')}</span><span>From</span><span>${accChip(x.paidFrom)}</span><span>Kind</span><span>${esc(x.kind === 'unknown' ? 'Couldn’t explain' : KIND[x.kind] || '—')}</span><span>Rory knew</span><span>${esc(x.told === 'before' ? 'Before' : TOLD[x.told] || '?')}</span></div>${x.note ? `<p class="mut fs90">${esc(x.note)}</p>` : ''}${S.canWrite ? `<button class="btn small danger" data-act="spendDel" data-id="${esc(x.id)}">Delete</button>` : ''}`}));
+  const listHtml = buys.length ? `<section class="panel"><header><h2>All purchases</h2></header>${entryWeeks('buys', buys)}</section>` : '';
   const mStart = new Date(today().getFullYear(), today().getMonth(), 1);
   const monthList = S.spending.filter(x => pd(x.date) && pd(x.date) >= mStart);
   const whoPanel = `<section class="panel"><header><h2>Who spent what</h2><div class="seg" role="group">${[['week', 'This week'], ['month', new Intl.DateTimeFormat('en-IE', {month:'long'}).format(today())]].map(([k, l]) => `<button type="button" data-act="seg" data-form="view" data-key="who" data-val="${k}" aria-pressed="${(S.f.view?.who || 'week') === k}">${l}</button>`).join('')}</div></header>
@@ -2999,7 +3012,7 @@ function vHistory(){
       <div class="form">${field('dec', 'text', 'What did you decide', {area:true, wide:true, ph:'We agreed: no new games until the card is at €0.'})}</div>
       <div class="actions"><button class="btn strong" data-act="decSave">Save to history</button></div></section>` : ''}
     <section class="panel"><header><h2>History</h2><span class="mut fs85">Every change to bills, setup and the card is recorded here automatically</span></header>
-    ${list.length ? `<div class="ios-list ios-hist">${list.slice(0, S.histN || 40).map(c => `<div class="ios-row"><span class="meta"><span>${dshort(pd(c.date))}</span><span class="chip idle">${esc(KN[c.kind] || c.kind)}</span></span><span class="txt">${esc(c.text)}</span></div>`).join('')}</div>${list.length > (S.histN || 40) ? `<button class="ios-more" data-act="histMore">Show 40 more (${list.length - (S.histN || 40)} older)</button>` : ''}` : list.length ? `<div class="tablewrap"><table><thead><tr><th>When</th><th>Type</th><th>What changed</th></tr></thead><tbody>${list.slice(0, 300).map(c => `<tr><td class="num">${dlong(pd(c.date))}</td><td><span class="chip idle">${esc(KN[c.kind] || c.kind)}</span></td><td>${esc(c.text)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nothing yet. The first bill you add will show up here.</p>'}</section></div>`;
+    ${list.length ? entryWeeks('hist', list.map(c => ({id: c.id, d: pd(c.date) || localDay(c.at), what: `<span class="chip idle">${esc(KN[c.kind] || c.kind)}</span> ${esc(String(c.text || '').length > 42 ? `${String(c.text).slice(0, 40)}…` : c.text || '')}`, body: `<p class="fs90">${esc(c.text || '')}</p>`}))) : '<p class="mut">Nothing yet. The first bill you add will show up here.</p>'}</section></div>`;
 }
 
 /* ---------- does the money add up? (money check reconciliation) ---------- */
@@ -4233,7 +4246,9 @@ function enUsePanel(F){   // how we use it: week by week, each bill, peak and ni
       ${pd(T.contractEnd) && dayDiff(t, pd(T.contractEnd)) <= 60 ? `<li class="warn"><span>The contract ends on ${dlong(pd(T.contractEnd))}. Compare prices (bonkers.ie, switcher.ie) before it rolls on to a standard rate.</span></li>` : `<li class="idle"><span>The contract runs to ${pd(T.contractEnd) ? dlong(pd(T.contractEnd)) : '—'}; the To do list reminds us to compare prices 6 weeks before.</span></li>`}</ul></section>`;
 }
 function enReadsPanel(F){   // every reading, with what it added
-  return F.readings.length ? `<section class="panel"><header><h2>Readings</h2><span class="mut fs85">Each new number replaces the last one for its month; only what it adds counts</span></header><div class="ledger">${enReadingRows().slice(0, 14).map(x => `<div class="lrow"><span class="d">${dshort(pd(x.r.upTo))}</span><span class="n">${num(x.r.kwh)} kWh so far in ${esc(enMonth(pd(x.r.upTo)))}${x.final ? ' (final)' : ''}<br><small>${x.first ? `+${x.add.toFixed(1)} kWh since 1 ${esc(enMonth(pd(x.r.upTo)).slice(0, 3))}` : `+${x.add.toFixed(1)} kWh since the last reading`}${x.perDay != null ? ` · ${x.n} day${x.n > 1 ? 's' : ''}, ${x.perDay.toFixed(1)} a day` : ''}${x.r.eur ? ` · ${money(x.r.eur)} in the app` : ''}</small></span><span class="a">${S.canWrite ? `<button class="btn small danger" data-act="enDelRead" data-d="${esc(x.r.upTo)}">Delete</button>` : ''}</span></div>`).join('')}</div></section>` : '';
+  return F.readings.length ? `<section class="panel"><header><h2>Readings</h2><span class="mut fs85">Each new number replaces the last one for its month; only what it adds counts</span></header>${entryWeeks('reads', enReadingRows().map(x => ({id: x.r.upTo, d: pd(x.r.upTo), amt: `+${x.add.toFixed(1)} kWh`,
+    what: `${num(x.r.kwh)} kWh so far in ${esc(enMonth(pd(x.r.upTo)))}${x.final ? ' (final)' : ''}`,
+    body: `<p class="mut fs90">${x.first ? `+${x.add.toFixed(1)} kWh since 1 ${esc(enMonth(pd(x.r.upTo)).slice(0, 3))}` : `+${x.add.toFixed(1)} kWh since the last reading`}${x.perDay != null ? ` · ${x.n} day${x.n > 1 ? 's' : ''}, ${x.perDay.toFixed(1)} a day` : ''}${x.r.eur ? ` · ${money(x.r.eur)} in the app` : ''}</p>${S.canWrite ? `<button class="btn small danger" data-act="enDelRead" data-d="${esc(x.r.upTo)}">Delete</button>` : ''}`})))}</section>` : '';
 }
 function enBillForm(){   // when the real bill arrives (Thiago only)
   return S.canWrite ? `<section class="panel"><header><h2>When the bill arrives</h2></header><p class="mut fs90">Copy it from page 2 of the bill (“Your usage details”). The real bill sets the amount and date in Pay, teaches the system our day, night and peak split, and starts the next period.</p>
@@ -5468,7 +5483,7 @@ function cardIntPanel(){
 }
 
 /* ---------- system health: the page checks itself every time it opens; Claude runs the full check every Monday ---------- */
-const APP_VERSION = '2026.11.12-6';
+const APP_VERSION = '2026.11.12-7';
 function selfCheck(){   // cheap checks on the data, run on every open: things that don't fit, and the weekly tasks that should have run
   const key = `${S._rt}|${iso(today())}`; if (S._hc && S._hc.k === key) return S._hc.v;
   const items = [], t = today(), add = (st2, area, txt) => items.push({st: st2, area, t: txt});
@@ -6610,7 +6625,7 @@ document.addEventListener('input', e => {
   (S.f[form] ||= {})[k] = val;
   if (t.tagName === 'SELECT' || t.type === 'checkbox' || form === 'check' || form === 'what' || form === 'chk' || form === 'bal' || form === 'bill' || form === 'kl' || form === 'ln' || form === 'wi' || form === 'pe' || form === 'vbf' || form === 'mv' || form === 'cmp' || form === 'cmpmin' || form.startsWith('cp_') || (form === 'spend' && S.f.spend && S.f.spend.split && /^(amount|s[A-Z])/.test(k))) sched();
 });
-document.addEventListener('toggle', e => { if (e.target.classList && e.target.classList.contains('bmore')) S.detailsOpen = e.target.open; if (e.target.id === 'wishForm') S.wishOpen = e.target.open; }, true);
+document.addEventListener('toggle', e => { if (e.target.dataset && e.target.dataset.fold) (S.eOpen ||= {})[e.target.dataset.fold] = e.target.open; if (e.target.classList && e.target.classList.contains('bmore')) S.detailsOpen = e.target.open; if (e.target.id === 'wishForm') S.wishOpen = e.target.open; }, true);
 document.addEventListener('change', e => {   // controls whose action runs when their value changes (a tick, a choice from a list)
   const t = e.target, a = t.dataset && t.dataset.act;
   if (a === 'wkToggle'){ const ws = t.dataset.w || (S.tab === 'report' && S.reportWeek) || iso(weekStartOf(today())); weekUpdate(ws, {transfers: {[t.dataset.k]: t.checked}}); }
@@ -6625,7 +6640,6 @@ document.addEventListener('click', async e => {
     case 'todayOpen': S.todayOpen = b.dataset.v || ''; if (S.todayOpen) S.tab = 'today'; S.err = ''; S.sheetEnter = !!S.todayOpen; render(); break;   // the Log a purchase and Add money sheets open from any tab, over Today
     case 'sheetBg': if (e.target === b){ S.todayOpen = ''; S.err = ''; render(); } break;
     case 'todoAll': S.todoAll = !S.todoAll; render(); break;
-    case 'histMore': S.histN = (S.histN || 40) + 40; render(); break;
     case 'wkSent': { const wsI = S.reportWeek || iso(weekStartOf(today())); await weekUpdate(wsI, {sent: iso(today())}); await logChange('transfer', `Weekly report for ${weekLabel(pd(wsI))} sent to Rory`, {tell: 'report'}); toast('Marked as sent'); break; }
     case 'goSetup': go('setup'); break;
     case 'seg': { const f = b.dataset.form; (S.f[f] ||= {})[b.dataset.key] = b.dataset.val; render(); break; }

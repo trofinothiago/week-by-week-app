@@ -388,6 +388,20 @@ with sync_playwright() as p:
             check(f"free money {label}: what's left less {'nothing' if label == 'on Sunday' else 'all the shop, cigarettes and drinks still need'}", abs(r['free'] - r['want']) < .02, r)
     step('free money', f_free)
 
+    # ---- 5b. lists that only grow: one short line per entry, this week open, older weeks folded, and what was opened stays open ----
+    def f_lists():
+        load(NOW)
+        for tab, sub, name in [('money', 'spending', 'purchases'), ('money', 'debts', 'card log'), ('money', 'transfers', 'moves'), ('money', 'energy', 'readings'), ('settings', 'history', 'History')]:
+            ev(f"() => {{ S.eOpen = {{}}; S.tab = '{tab}'; S.sub.{tab} = '{sub}'; render(); }}")
+            r = ev("""() => { const L = document.querySelector('#view .elist'); if (!L) return null; const now = iso(weekStartOf(today()));
+                const weeks = [...L.querySelectorAll('.eweek')], line = L.querySelector('.eline');
+                const r = {weeks: weeks.length, lines: L.querySelectorAll('.eline').length, wrong: weeks.filter(d => d.open !== d.dataset.fold.endsWith(':' + now)).map(d => d.dataset.fold), table: !!L.closest('section').querySelector('table')};
+                if (line) { line.open = true; line.dispatchEvent(new Event('toggle')); render(); r.kept = !!document.querySelector(`#view .eline[data-fold="${line.dataset.fold}"]`)?.open; }
+                return r; }""")
+            if r is None: notes[f'list {name}'] = 'nothing logged'; continue
+            check(f"{name}: one short line per entry, this week open, older weeks folded, a line opened stays open", r['lines'] and not r['wrong'] and not r['table'] and r.get('kept', True), r)
+    step('lists', f_lists)
+
     # ---- 5b. two money checks on the same day: the later one is the one that counts ----
     def f_sameday():
         load(NOW)

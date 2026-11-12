@@ -746,9 +746,6 @@ body.sheet-open{overflow:hidden}
 [data-look="ios"] .xstep .when,[data-look="ios"] .xstep .note{font-size:.8rem}
 [data-look="ios"] .xstep input:not([type=checkbox]){min-height:36px;max-width:130px;padding:6px 10px;font-size:16px}
 [data-look="ios"] .acc{font-size:.68rem}
-[data-look="ios"] .ios-hist .ios-row{cursor:default;grid-template-columns:minmax(0,1fr);gap:4px}
-[data-look="ios"] .ios-hist .ios-row::before{left:14px}
-[data-look="ios"] .ios-hist .meta{display:flex;gap:8px;align-items:center;font-size:.78rem;color:var(--muted)}
 /* Plan → Ready: kit rows with their buttons under the name */
 .lrow.prow{grid-template-areas:"d d" "n n" "b b"}
 .lrow .pbtns{grid-area:b;display:flex;flex-wrap:wrap;gap:4px 18px;justify-content:flex-start}
@@ -771,10 +768,20 @@ body.sheet-open{overflow:hidden}
 .ios-adv b.inl{display:inline;font-size:inherit}
 .tint{color:var(--accent)}
 .sw.sq{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px}
+/* lists that only grow: one short line per entry (like Pay's "Done this week"), each week folded */
+.elist{display:grid;gap:4px}
+.eweek>summary{font-size:.95rem}
+.eline{border-bottom:1px dashed var(--rule)}
+.eline>summary{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:7px 0;font:400 .92rem var(--f-body);list-style:none}
+.eline>summary::-webkit-details-marker{display:none}
+.eline[open]>summary{font-weight:600}
+.ebody{display:grid;gap:8px;justify-items:start;padding:2px 0 12px}
+.ebody .kv{width:100%}
+.ebody .kv span:nth-child(even){font-family:var(--f-body)}
 /* helpers, one setting each: like the style="…" they replaced, they win over a section's own size or spacing */
 .fs85{font-size:.85rem!important} .fs88{font-size:.88rem!important} .fs90{font-size:.9rem!important} .fs92{font-size:.92rem!important} .fs130{font-size:1.3rem!important}
 .mt4{margin-top:4px!important} .mt6{margin-top:6px!important} .mt8{margin-top:8px!important} .mt10{margin-top:10px!important} .mt12{margin-top:12px!important}
-.mb16{margin-bottom:16px!important} .my6{margin:6px 0!important}
+.mb16{margin-bottom:16px!important}
 .fw4{font-weight:400!important} .fw6{font-weight:600!important} .nowrap{white-space:nowrap!important} .prewrap{white-space:pre-wrap!important}
 .grow{flex:1!important;min-width:0!important} .fullrow{grid-column:1/-1!important} .mw150{min-width:150px!important}
 .l0{left:0!important} .l30{left:30%!important} .l80{left:80%!important} .l100{left:100%!important}
