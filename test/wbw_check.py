@@ -336,18 +336,31 @@ with sync_playwright() as p:
         check('Pay has no transfers left for the week', not ev(f"() => payToDo().some(x => x.kind === 'step' || x.kind === 'card')"))
         check('Joint tile: no "once the pays are in" after everything is done', not ev(f"() => jointShow(pd('{info['ws']}')).pending"))
         sun = datetime.datetime.fromisoformat(info['ws']) + datetime.timedelta(days=6, hours=20); at(sun)
+        # the balances to type: the last complete check plus everything logged since. The kit states the rule itself, so a reconcile that
+        # stops following it fails here: purchases and moves count by the time they were logged, after the last check and up to now
+        # (one logged after a check on the same day counts), and a check done before noon comes before that day's bills
         c = ev("""() => { const c0 = sortedChecks().filter(c => ['joint','bills','vaults','ef','aib','card'].every(k => has(c[k]))).pop(); if (!c0) return null;
-            const rows = flowRows(pd(c0.date), today(), c0.card), sum = rows.reduce((t, r) => t + r.amt, 0), card = cardState() ? cardState().bal : num(c0.card);
-            const old = num(c0.joint) + num(c0.bills) + num(c0.vaults) + num(c0.ef) + num(c0.aib) - num(c0.card);
-            const joint = Math.round((old + sum - (num(c0.bills) + num(c0.vaults) + num(c0.ef) + num(c0.aib)) + card) * 100) / 100;
-            return {joint, bills: num(c0.bills), vaults: num(c0.vaults), ef: num(c0.ef), aib: num(c0.aib), card: Math.round(card * 100) / 100, cardBefore: card}; }""")
+            const a = pd(c0.date), rows = flowRows(a, today(), c0.card, {billA: chkEarly(c0) ? addDays(a, -1) : a, sA: chkAt(c0), sZ: new Date().toISOString()});
+            const sum = rows.reduce((t, r) => t + r.amt, 0), card = cardState() ? cardState().bal : num(c0.card);
+            const tol = Math.max(15, rows.reduce((t, r) => t + Math.abs(r.amt), 0) * 0.02);
+            const joint = Math.round((poolOf(c0) + sum - (num(c0.bills) + num(c0.vaults) + num(c0.ef) + num(c0.aib)) + card) * 100) / 100;
+            return {joint, bills: num(c0.bills), vaults: num(c0.vaults), ef: num(c0.ef), aib: num(c0.aib), card: Math.round(card * 100) / 100, cardBefore: card, tol}; }""")
         if not c: notes['check'] = 'no complete money check to start from'; return
-        ev(f"() => {{ S.f.chk = {{date: iso(today()), joint: '{c['joint']}', bills: '{c['bills']}', vaults: '{c['vaults']}', ef: '{c['ef']}', aib: '{c['aib']}', card: '{c['card']}', kwh: '', note: ''}}; S.tab = 'week'; render(); }}"); act('chkSave'); w(600)
-        r = ev("() => { const r = latestRec(); return r && {ok: r.ok, diff: Math.round((r.diff ?? r.gap ?? 0) * 100) / 100}; }")
+        def save_check(joint):
+            ev(f"() => {{ S.f.chk = {{date: iso(today()), joint: '{joint}', bills: '{c['bills']}', vaults: '{c['vaults']}', ef: '{c['ef']}', aib: '{c['aib']}', card: '{c['card']}', kwh: '', note: ''}}; S.tab = 'week'; render(); }}"); act('chkSave'); w(600)
+            return ev("() => { const r = latestRec(); return r && {ok: r.ok, diff: Math.round((r.diff ?? r.gap ?? 0) * 100) / 100}; }")
+        def del_check():
+            cid = ev("() => S.checks.slice().sort((a, b) => (a.at || '').localeCompare(b.at || '')).pop().id"); act('chkDel', id=cid); act('chkDel', id=cid)
+            return cid
+        r = save_check(c['joint'])
         check('Sunday money check: adds up with everything logged', r and r['ok'] and abs(r['diff']) < .02, r)
         check('the check sets the card balance', abs(num('cardState().bal') - c['card']) < .01)
-        cid = ev("() => S.checks.slice().sort((a, b) => (a.at || '').localeCompare(b.at || '')).pop().id"); act('chkDel', id=cid); act('chkDel', id=cid)
+        cid = del_check()
         check('deleting the check undoes it', not ev(f"() => S.checks.some(x => x.id === '{cid}')") and abs(num('cardState().bal') - c['cardBefore']) < .01)
+        off = round(c['tol'] + 50, 2)   # money missing from the Joint account, more than the check allows for
+        r = save_check(round(c['joint'] - off, 2))
+        check(f"Sunday money check: €{off:.2f} missing from the Joint account doesn't add up", r and not r['ok'] and abs(r['diff'] + off) < .02, r)
+        del_check()
         ev("() => { S.tab = 'week'; render(); }")
         check("the week's report draws after the whole week", not any(s in view() for s in BAD))
     step('week', f_week)
