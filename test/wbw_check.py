@@ -209,6 +209,8 @@ with sync_playwright() as p:
     wk = ev("() => { const p = document.querySelector('#view .preview'), d = p && p.closest('details'); return {steps: [...document.querySelectorAll('#view .panel')][0].innerText, folded: !!d && !d.open, old: /The Joint account this week|Monday morning/.test(document.getElementById('view').innerText), screens: document.documentElement.scrollHeight / window.innerHeight}; }")
     check('Week (cleaner): the three steps show at the top, Rory’s report is folded behind one tap, the old Joint-only box is gone', all(x in wk['steps'].lower() for x in ['transfers', 'money check', 'report to rory']) and wk['folded'] and not wk['old'], wk)
     ev("() => { document.querySelector('#view .preview').closest('details').open = true; }"); check('Week: the folded report opens and draws', 'What we owe' in view() and not any(s in view() for s in BAD))
+    tw = ev("() => { const p = [...document.querySelectorAll('#view .panel')].find(x => /Transfers/.test(x.querySelector('h2')?.innerText || '')), d = p && p.querySelector('details'); return {folded: !!d && !d.open && !!d.querySelector('[data-act=wkToggle]'), pay: !!p?.querySelector('[data-act=tab][data-to=pay]')}; }")
+    check('Week: the transfer list is folded (Pay confirms them on their day), with a button to Pay', tw['folded'] and tw['pay'], tw)
     ev("() => render()")
     ev("() => { S.canWrite = false; render(); }"); rv = view()
     rfit = ev(PROBE); check("Rory's view fits the phone screen", not rfit, rfit[:8])

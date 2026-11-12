@@ -360,7 +360,6 @@ tfoot td{font-weight:600;background:var(--rule2)}
 .cardpay input{width:80px;background:var(--bg);border:1px solid var(--rule);border-radius:8px;padding:5px 8px;font:inherit;color:var(--ink)}
 .cardpay .btn.on{background:var(--ink);color:var(--sheet);border-color:var(--ink)}
 /* real transfer amounts */
-.golinks{display:flex;flex-wrap:wrap;gap:8px}
 .xstep .realamt{display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--muted);grid-column:1/-1}
 .xstep .realamt input{width:110px;background:var(--bg);border:1px solid var(--rule);border-radius:8px;padding:5px 8px;font:inherit;color:var(--ink)}
 .amt .planned{display:block;font-size:.75rem;font-weight:400;color:var(--muted);text-decoration:line-through}
@@ -6222,10 +6221,11 @@ function transfersPanel(ws){
       <label class="chk"><input type="checkbox" data-act="wkToggle" data-k="${esc(m.id)}" data-w="${m.w}"${moveDone(m) ? ' checked' : ''}${S.canWrite ? '' : ' disabled'}> Done</label></li>`).join('')}</ul>` : '';
   return `<section class="panel"><header><h2><span class="stepn">1</span> Transfers</h2><span class="chip ${done === steps.length ? 'ok' : done ? 'warn' : 'idle'}">${done} of ${steps.length} done</span></header>
     ${fl.jointDay < 0 ? `<div class="banner"><b>The transfers add up to more than comes in</b>, by ${money(-fl.jointDay)} a week. Lower a transfer in Settings.</div>` : ''}
-    ${list}
+    ${adjPanel(ws)}
+    ${iso(ws) === iso(weekStartOf(today())) && S.canWrite ? `<p class="mut" style="font-size:.9rem">Each transfer shows up in Pay on its day: confirm it there, with the real amount if it was different.</p><div class="actions"><button class="btn" data-act="tab" data-to="pay">Open Pay</button></div>` : ''}
+    <details><summary>See or change the transfers</summary><div style="margin-top:10px">${list}
     ${S.canWrite ? `<div class="actions"><button class="btn" data-act="amtSave" data-w="${wsI}">Save the real amounts</button><span class="mut" style="font-size:.88rem">Only if a transfer wasn’t the planned amount. Leave a box empty when it was.</span></div>` : ''}
-    ${adjPanel(ws)}${moves}
-    <div class="golinks"><button class="btn small" data-act="tab" data-to="transfers">How money moves between our accounts</button><button class="btn small" data-act="tab" data-to="transfers">Transfers to Brazil (Wise → Nubank)</button></div></section>`;
+    ${moves}</div></details></section>`;
 }
 function flowMapHTML(fl){
   return `<div class="flowmap" role="img" aria-label="Money flow">
