@@ -2818,7 +2818,8 @@ function reportBoard(ws, forPdf, D){
   const efGoal = P ? (P.ef >= P.T.starter - .005 ? P.T.full : P.T.starter) : 0;
   const kpi = (label, big, sub, cls, b) => `<div class="bk"><span class="bl">${label}</span><b class="${cls || ''}">${big}</b>${b || ''}<small>${sub}</small></div>`;
   const kpis = `<div class="bkpis">
-    ${kpi(essentialsKnown() ? 'Free money left' : 'Joint, for the shop', D.fl.configured ? m0(D.jointW.v) : '—', D.jointW.pending && D.jointW.plan - D.jointW.v > .5 ? `${m0(D.jointW.plan)} after payday` : !essentialsKnown() ? 'shop, cigarettes, drinks first' : freeMax > 0 ? `of ${m0(freeMax)}` : 'this week', D.jointW.v < 0 ? 'neg' : '', freeMax > 0 ? bar(D.jointW.v / freeMax, C.ok) : '')}
+    ${D.fl.configured && jointWait(D.jointW) ? kpi('In the Joint now', m0(D.jointW.now), `${m0(D.jointW.plan)} ${essentialsKnown() ? 'free' : 'for the shop'} after payday`, D.jointW.now < 0 ? 'neg' : '', '')
+      : kpi(essentialsKnown() ? 'Free money left' : 'Joint, for the shop', D.fl.configured ? m0(D.jointW.v) : '—', !essentialsKnown() ? 'shop, cigarettes, drinks first' : freeMax > 0 ? `of ${m0(freeMax)}` : 'this week', D.jointW.v < 0 ? 'neg' : '', freeMax > 0 ? bar(D.jointW.v / freeMax, C.ok) : '')}
     ${kpi('Card owes', D.cardNow != null ? m0(D.cardNow) : '—', weekCardPay(D.wsI) ? `<b>${m0(weekCardPay(D.wsI).amount)}</b> paid this week` : D.delta != null && Math.abs(D.delta) >= .5 ? `<span class="${D.delta < 0 ? 'pos' : 'neg'}">${D.delta < 0 ? '▼' : '▲'} ${m0(Math.abs(D.delta))}</span> this week` : u != null ? `${Math.round(u * 100)}% of limit` : '', '', u != null ? bar(u, utilState(u) === 'bad' ? C.bad : utilState(u) === 'warn' ? '#A0560B' : C.ok) : '')}
     ${kpi('Emergency fund', P ? m0(P.ef) : '—', P ? `goal ${m0(efGoal)}` : '', '', P ? bar(P.ef / Math.max(1, efGoal), C.s3) : '')}
     ${kpi('No slips for', D.sk ? `${D.sk.days}<span class="unit"> day${D.sk.days === 1 ? '' : 's'}</span>` : '—', D.slipsW.length ? `<span class="neg">${D.slipsW.length} this week</span>` : 'none this week', '')}
@@ -3612,7 +3613,7 @@ function jointShow(ws){   // the Joint tile: what is really there to use now, ne
   const v = known ? Math.min(plan, jn.v + (freeLeft(ws) - jointLeft(ws))) : jn.v;
   return {v: Math.round(v * 100) / 100, plan, pending: jn.pending, when: jn.when, now: jn.now};
 }
-const jointWait = J => J.pending && J.plan - J.v > .5 ? `${money(J.plan)} once the pays are in and the transfers go (${fWD.format(J.when)} ${J.when.getDate()})` : '';
+const jointWait = J => J.pending && J.plan - J.v > .5;   // before the pays are in and the transfers have gone: show what is really in the Joint now, and what will be free after payday
 function cardPayday(ws){   // the day both incomes are in that week (bank holidays included), when the shared transfers go
   const wk = ['rory', 'thiago'].filter(w => payFreq(w) === 'weekly'), who = wk.length ? wk : ['rory', 'thiago'];   // the weekly pays set the day; a monthly pay doesn't hold the week back
   const pays = who.map(w => payDate(w, ws)).filter(Boolean).map(x => x.d);
@@ -5610,7 +5611,8 @@ function vTodayIOS(){
   const ef = P ? P.sim.e0.amount : num(PL().efBalance), efT = P ? P.sim.T.starter : 1000;
   const tile = (icon, label, big, sub, to, bar, cls) => `<button type="button" class="ios-tile" data-act="tab" data-to="${to}"><span class="t">${ico(icon)}${label}</span><b class="${cls || ''}">${big}</b>${bar != null ? `<span class="bar"><i style="width:${(Math.max(0, Math.min(1, bar)) * 100).toFixed(1)}%"></i></span>` : ''}<small>${sub}</small></button>`;
   const tiles = `<div class="ios-grid">
-    ${tile('wallet', known ? 'Free money' : 'Joint, for the shop', fl.configured ? money(left) : '—', !fl.configured ? 'Set up the incomes' : jointWait(J) || (!known ? 'Shop, cigarettes and drinks first' : freeMax > 0 ? `of ${money(freeMax)} this week` : 'none planned this week'), 'spending', known && freeMax > 0 ? left / freeMax : null, left < 0 ? 'neg' : '')}
+    ${fl.configured && jointWait(J) ? tile('wallet', 'In the Joint now', money(J.now), `<b>${money(J.plan)}</b> ${known ? 'free' : 'for the shop'} after payday (${fWD.format(J.when)} ${J.when.getDate()})`, 'spending', null, J.now < 0 ? 'neg' : '')
+      : tile('wallet', known ? 'Free money' : 'Joint, for the shop', fl.configured ? money(left) : '—', !fl.configured ? 'Set up the incomes' : !known ? 'Shop, cigarettes and drinks first' : freeMax > 0 ? `of ${money(freeMax)} this week` : 'none planned this week', 'spending', known && freeMax > 0 ? left / freeMax : null, left < 0 ? 'neg' : '')}
     ${tile('card', 'Card owes', cs ? money(cs.bal) : '—', cs ? (pr && pr.payoff ? `clear by ${dshort(pr.payoff)} ${pr.payoff.getFullYear()}` : 'not clear at this rate') : 'Log the balance', 'debts')}
     ${tile('umbrella', 'Emergency fund', money(ef), ef >= efT ? 'starter fund ready' : `of ${money(efT).replace('.00', '')} starter`, 'plan', ef / (efT || 1))}
     ${tile('leaf', 'No slips for', sk ? `${sk.days} day${sk.days === 1 ? '' : 's'}` : '—', keptByNo() > 0 ? `${money(keptByNo()).replace('.00', '')} kept by saying no` : 'every purchase logged, Rory first', 'rules')}
