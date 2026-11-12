@@ -5322,6 +5322,7 @@ function cardPendItems(form){
   const f = S.f[form] || {}, d = pd(f.date) || today(), a = addDays(d, -7), inR = x => { const p = pd(x.date); return p && p > a && p <= d; };
   const buys = S.spending.filter(x => x.paidFrom === 'card' && !x.sched && inR(x)).map(x => ({id: x.id, d: pd(x.date), n: x.what || 'Purchase', a: num(x.amount)}))
     .concat(S.cardlog.filter(e => e.type === 'scheduled' && inR(e)).map(e => ({id: e.id, d: pd(e.date), n: e.note || 'Card charge', a: num(e.amount)})))
+    .concat(billsTimeline().filter(b => b.account === 'card').flatMap(b => occurrences(b, addDays(a, 1), d).map(x => ({id: `bill_${b.id}_${iso(x).replace(/-/g, "")}`, d: x, n: occName(b, x), a: occAmount(b, x)}))))   // bills charged to the card (Claude, Nintendo Online…) can be pending too
     .sort((p, q) => q.d - p.d);
   const pays = S.cardlog.filter(e => e.type === 'payment' && pd(e.date) && pd(e.date) > addDays(d, -6) && pd(e.date) <= d).map(e => ({id: e.id, d: pd(e.date), n: e.note || 'Card payment', a: num(e.amount)})).sort((p, q) => q.d - p.d);
   return {buys, pays};
@@ -5339,8 +5340,8 @@ function cardPendBox(form, key){
   const verdict = diff == null ? '' : Math.abs(diff) < 0.01 ? `<p><span class="chip ok">✓ Same as the system</span></p>`
     : `<p class="${Math.abs(diff) >= 1 ? 'err' : 'mut'}" style="font-size:.92rem">${diff > 0 ? `${money(diff)} more than the system expects (${money(cs.bal)}). A card purchase not logged yet? Log it, then check again.${it ? ` Or the interest from the ${dshort(it.c.S)} statement, not typed yet (Money → Debts).` : ''}` : `${money(-diff)} less than the system expects (${money(cs.bal)}). A purchase still pending but not ticked? A payment or refund not logged?`}</p>`;
   return `<div class="formbox" style="margin-top:8px"><h3>Still pending in the AIB app?</h3>
-    <p class="mut" style="font-size:.88rem">The app’s big number leaves out purchases marked “Pending”. Tick the ones it still shows as Pending, so we save what we really owe.</p>
-    ${C.I.buys.length ? C.I.buys.map(x => row(x, 'p')).join('') : '<p class="mut" style="font-size:.88rem">No card purchases logged in the last 7 days.</p>'}
+    <p class="mut" style="font-size:.88rem">The app’s big number leaves out purchases marked “Pending”. Tick the purchases and bills it still shows as Pending, so we save what we really owe.</p>
+    ${C.I.buys.length ? C.I.buys.map(x => row(x, 'p')).join('') : '<p class="mut" style="font-size:.88rem">No card purchases or card bills in the last 7 days.</p>'}
     ${C.I.pays.length ? `<p class="mut" style="font-size:.88rem;margin-top:8px">A card payment the app doesn’t show yet (it can take a working day or two)?</p>${C.I.pays.map(x => row(x, 'u', 'not in the app yet')).join('')}` : ''}
     <div class="kv" style="margin-top:8px"><span>Balance in the app</span><span>${money(C.app)}</span>${C.pend ? `<span>+ still pending</span><span>${money(C.pend)}</span>` : ''}${C.unp ? `<span>− payment not in the app yet</span><span>${money(C.unp)}</span>` : ''}<span><b>We really owe</b></span><span><b>${money(C.owed)}</b></span></div>
     ${verdict}</div>`;

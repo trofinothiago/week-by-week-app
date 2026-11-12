@@ -250,6 +250,11 @@ with sync_playwright() as p:
         const d5 = addDays(today(), 5); S.bills = bl.concat([{id: 'kitnb', name: 'Kit Brazil', account: 'nubank', amount: 100, freq: 'monthly', dueDay: d5.getDate(), active: true, cat: 'Health'}]); r.brDue = line('transfers', /Transfers to Brazil/);
         S.bills = bl; S.tab = 'week'; render(); return r; }""")
     check('Quiet cards (cleaner): Klarna, Long-term things and Brazil fold to one line when nothing runs or is due, and show in full when something does', q8 == {'klNone': 'folded', 'asNone': 'folded', 'klBusy': 'card', 'asBusy': 'card', 'brQuiet': 'folded', 'brDue': 'card'}, q8)
+    cb = ev("""() => { const bl = S.bills, d2 = addDays(today(), -2); S.bills = bl.concat([{id: 'kitcardbill', name: 'Kit card bill', account: 'card', amount: 22.14, freq: 'monthly', dueDay: d2.getDate(), active: true, cat: 'Apps & cloud'}]);
+        S.f.chk = {...(S.f.chk || {}), date: iso(today()), card: '1000'}; S.tab = 'week'; render(); const I = cardPendItems('chk'), it = I.buys.find(x => /Kit card bill/.test(x.n));
+        const r = {listed: !!it, shown: document.getElementById('view').innerText.includes('Kit card bill')}; if (it){ S.f.chk['p_' + it.id] = true; r.owed = cardOwedFrom('chk', 'card').owed; }
+        S.bills = bl; S.f.chk = {date: iso(today())}; render(); return r; }""")
+    check('Money check: a bill charged to the card in the last 7 days (Claude) can be ticked as still pending, and counts in what we really owe', cb.get('listed') and cb.get('shown') and abs(cb.get('owed', 0) - 1022.14) < .005, cb)
     check('System (cleaner): the self-check stays; Claude’s check is one line with the detail folded; only ideas waiting show, keeping their number; What’s new folded', sy['one'] and sy['three'] and not sy['built'] and sy['rowHidden'] and sy['newsFolded'] and sy['selfCheck'] and sy['noIdeas'], sy)
     ev("() => render()")
     ev("() => { S.canWrite = false; render(); }"); rv = view()
