@@ -1998,7 +1998,7 @@ const addLabel = m => `${m.added.who === 'both' ? 'We' : ADD_WHO[m.added.who] ||
 function addsIn(a, z){ return S.moves.filter(m => isAdd(m) && pd(m.date) && pd(m.date) >= a && pd(m.date) <= z); }
 function addsByWho(list){ const by = {thiago: 0, rory: 0, both: 0}; for (const m of list) by[m.added.who] = (by[m.added.who] || 0) + num(m.amount); return by; }
 const addsWhoText = (list, f = money) => { const by = addsByWho(list); return Object.entries(by).filter(([, v]) => v > .005).map(([k, v]) => `${k === 'both' ? 'both' : ADD_WHO[k]} ${f(v)}`).join(', '); };
-function addPanel(inSheet){
+function addPanel(){
   if (!S.canWrite) return '';
   const f = S.f.add || (S.f.add = {date: iso(today()), amount: '', to: 'joint', who: '', how: '', note: ''});
   if (!f.date) f.date = iso(today()); if (!f.to) f.to = 'joint';
@@ -2007,7 +2007,7 @@ function addPanel(inSheet){
     : f.to === 'ef' ? '<p class="mvnote ok">Goes into the emergency fund: it counts towards the starter €1,000 (and any refill the To do list asks for).</p>'
     : f.to === 'aib' ? '<p class="mvnote ok">Into AIB savings, the account that pays the card. If it then goes on to the Revolut Joint account, log that as a move in Transfers (or pick “Cash, through AIB savings” and Joint account here instead).</p>'
     : '<p class="mvnote ok">Into the Joint account: it shows on Today straight away, in this week’s money and in the money check.</p>';
-  return `<section class="panel" id="addPanel">${inSheet ? '' : '<header><h2>Add money</h2><span class="mut" style="font-size:.85rem">Cash deposits, money from our own pocket, gifts, sales, refunds</span></header>'}
+  return `<section class="panel" id="addPanel">
     <div class="form">${field('add', 'amount', 'Amount (€)', {money: true, ph: '50.00'})}${field('add', 'date', 'Date', {type: 'date'})}${field('add', 'to', 'Into', {select: ADD_TO})}${field('add', 'how', 'Where it came from', {select: [['', 'Choose…'], ...Object.entries(ADD_HOW)]})}</div>
     <div class="fld"><span class="label">Who put it in?</span>${seg('add', 'who', Object.entries(ADD_WHO))}</div>
     <div class="form">${field('add', 'note', 'Note (optional)', {wide: true, ph: 'Cash from the car boot sale'})}</div>
@@ -2016,6 +2016,12 @@ function addPanel(inSheet){
     <div class="actions"><button class="btn strong" data-act="addSave">Add the money</button></div>
     ${month.length ? `<h3>Added this month <small class="mut">${money(sumAmt(month))} · ${esc(addsWhoText(month))}</small></h3><div class="ledger">${month.map(m => `<div class="lrow"><span class="d">${dshort(pd(m.date))}</span><span class="n"><b>${esc(ADD_WHO[m.added.who] || '')}</b> <small>${esc(ADD_HOW[m.added.how] || '')} → ${esc(mvShort(m.to))}${m.note ? ` · ${esc(m.note)}` : ''}</small></span><span class="a">+${money(m.amount)}</span>${S.canWrite ? `<button class="linkbtn" data-act="mvDel" data-id="${esc(m.id)}">${S.confirmMv === m.id ? 'Tap again to undo' : 'Undo'}</button>` : ''}</div>`).join('')}</div>` : ''}
   </section>`;
+}
+function addLine(){   // Money → Transfers: what was added this month, and the Add money sheet one tap away
+  if (!S.canWrite) return '';
+  const month = addsIn(new Date(today().getFullYear(), today().getMonth(), 1), today());
+  return `<section class="panel"><header><h2>Add money</h2><span class="mut" style="font-size:.85rem">${month.length ? `Added this month ${money(sumAmt(month))} · ${esc(addsWhoText(month))}` : 'Nothing added this month'}</span></header>
+    <div class="actions"><button class="btn strong" data-act="todayOpen" data-v="add">＋ Add money</button></div></section>`;
 }
 async function addSave(){
   const f = S.f.add || {}, amt = Math.round(num(f.amount) * 100) / 100; S.errAt = 'add';
@@ -2425,9 +2431,9 @@ async function splitSave(){
     toast(`Receipt logged in ${L.lines.length} line${L.lines.length > 1 ? 's' : ''}`); S.todayOpen = ''; render();
   } catch (e) { writeErr(e); }
 }
-function spendFormPanel(inToday){
+function spendFormPanel(){
   const f = S.f.spend;
-  return S.canWrite ? `<section class="panel"><header><h2>Log a purchase</h2>${inToday ? '<button class="btn small" data-act="todayOpen" data-v="">Close</button>' : ''}</header>
+  return S.canWrite ? `<section class="panel"><header><h2>Log a purchase</h2><button class="btn small" data-act="todayOpen" data-v="">Close</button></header>
     <p class="mut">Anything that isn’t a bill: the Saturday shop, cigarettes, a game, clothes. Logging is how the report tells the truth without anyone having to ask.</p>
     ${f.sched ? '' : `<div class="fld"><span class="label">One kind of thing, or a receipt with several?</span>${seg('spend', 'split', [['', 'One thing'], ['yes', 'Split a receipt']])}</div>`}
     <div class="form">
@@ -2450,7 +2456,7 @@ function spendFormPanel(inToday){
 function vSpending(){
   const ws = weekStartOf(today());
   const f = S.f.spend;
-  const form = spendFormPanel(false);
+  const form = S.canWrite ? `<div class="actions"><button class="btn strong" data-act="todayOpen" data-v="log">＋ Log a purchase</button></div>` : '';
 
   const thisWeek = weekSpending(ws);
   const byCat = {};
@@ -3796,7 +3802,7 @@ function vPay(){
   const t = today(), C = RC_LIVE, all = payNow(), todo = all.filter(x => !x.logged), nx = payNext();
   const extraOpen = S.payOpen === 'extra';
   const extra = S.canWrite ? `<details class="payextra"${extraOpen || S.payOpen === 'early' ? ' open' : ''}><summary>Paid something that isn’t listed here?</summary>
-      <div class="actions" style="margin-top:8px"><button class="btn small${extraOpen ? ' on' : ''}" data-act="payOpen" data-k="extra">Extra payment to the card</button><button class="btn small" data-act="payLog">It was a purchase</button><button class="btn small" data-act="goMove">I moved money between accounts</button><button class="btn small${S.payOpen === 'early' ? ' on' : ''}" data-act="payOpen" data-k="early">A bill, paid early</button></div>${S.payOpen === 'early' ? payEarlyForm() : ''}
+      <div class="actions" style="margin-top:8px"><button class="btn small${extraOpen ? ' on' : ''}" data-act="payOpen" data-k="extra">Extra payment to the card</button><button class="btn small" data-act="todayOpen" data-v="log">It was a purchase</button><button class="btn small" data-act="goMove">I moved money between accounts</button><button class="btn small${S.payOpen === 'early' ? ' on' : ''}" data-act="payOpen" data-k="early">A bill, paid early</button></div>${S.payOpen === 'early' ? payEarlyForm() : ''}
       ${extraOpen ? `<div class="payform"><div class="form">${field('pay', 'amount', 'Extra payment to the card (€)', {money: true, ph: '400'})}${field('pay', 'date', 'Date', {type: 'date'})}${field('pay', 'note', 'What was it', {ph: 'Money from a sale'})}</div>${S.err && !String(S.errAt || '').startsWith('pp') ? `<p class="err">${esc(S.err)}</p>` : ''}<div class="actions"><button class="btn strong" data-act="cardPay" data-type="payment">Log extra payment</button></div></div>` : ''}</details>` : '';
   const A = weekAvgs(), cur = A.hist[A.hist.length - 1] || {spend: 0, bills: 0, card: 0}, vs = (now, avg) => A.partial ? '' : avg > 0 ? `<span class="${now > avg * 1.1 ? 'neg' : now < avg * .9 ? 'pos' : 'mut'}">${now > avg ? '▲' : '▼'} ${money(Math.abs(now - avg)).replace('.00', '')} vs average</span>` : '<span class="mut">no average yet</span>';
   const avgPanel = `<section class="panel"><header><h2>Our weekly averages</h2><span class="mut" style="font-size:.85rem">${A.partial ? 'From this week only. Averages settle after a few weeks.' : `Average of the last ${A.n} full week${A.n === 1 ? '' : 's'}`}</span></header>
@@ -5620,7 +5626,7 @@ function vTodayIOS(){
 }
 function iosSheet(){
   if (S.tab !== 'today' || !S.todayOpen) return '';
-  const open = S.todayOpen, body = open === 'check' ? checkPanel() : open === 'log' && S.canWrite ? spendFormPanel(true) : open === 'add' && S.canWrite ? addPanel(true) : '';
+  const open = S.todayOpen, body = open === 'check' ? checkPanel() : open === 'log' && S.canWrite ? spendFormPanel() : open === 'add' && S.canWrite ? addPanel() : '';
   if (!body) return '';
   const enter = S.sheetEnter ? ' enter' : ''; S.sheetEnter = false;
   return `<div class="ios-sheet${enter}" data-act="sheetBg" role="dialog" aria-modal="true" aria-label="${{check: 'Check a purchase', log: 'Log a purchase', add: 'Add money'}[open]}"><div class="sh"><div class="grab"></div><div class="shh"><button type="button" data-act="todayOpen" data-v="">Close</button><b>${{check: 'Check a purchase', log: 'Log a purchase', add: 'Add money'}[open]}</b><span></span></div>${body}</div></div>`;
@@ -6097,10 +6103,10 @@ function transfersPanel(ws){
 }
 function vTransfersPage(){
   const fl = flow();
-  if (!fl.configured) return `<div class="stack">${addPanel(false)}${movesPanel()}<section class="panel"><header><h2>Weekly transfers</h2></header>${emptyBox('Add both incomes and the weekly transfers in Settings first.', 'goSetup', 'Open Settings')}</section>${vWise()}</div>`;
+  if (!fl.configured) return `<div class="stack">${addLine()}${movesPanel()}<section class="panel"><header><h2>Weekly transfers</h2></header>${emptyBox('Add both incomes and the weekly transfers in Settings first.', 'goSetup', 'Open Settings')}</section>${vWise()}</div>`;
   const mv = dueMoves(today(), 27);
   return `<div class="stack">
-    ${addPanel(false)}
+    ${addLine()}
     ${movesPanel()}
     <section class="panel"><header><h2>Coming up: money to move before a bill</h2><span class="mut" style="font-size:.85rem">Next 4 weeks</span></header>
       <p class="mut">Bills saved in a Vault, or paid in Brazil, need one extra move before they are due.</p>
@@ -6550,7 +6556,7 @@ document.addEventListener('click', async e => {
   switch (a){
     case 'tab': go(b.dataset.to); break;
     case 'sub': S.sub[b.dataset.k] = b.dataset.v; S.err = ''; render(); window.scrollTo({top: 0}); break;
-    case 'todayOpen': S.todayOpen = b.dataset.v || ''; S.err = ''; S.sheetEnter = !!S.todayOpen; render(); break;
+    case 'todayOpen': S.todayOpen = b.dataset.v || ''; if (S.todayOpen) S.tab = 'today'; S.err = ''; S.sheetEnter = !!S.todayOpen; render(); break;   // the Log a purchase and Add money sheets open from any tab, over Today
     case 'sheetBg': if (e.target === b){ S.todayOpen = ''; S.err = ''; render(); } break;
     case 'todoAll': S.todoAll = !S.todoAll; render(); break;
     case 'histMore': S.histN = (S.histN || 40) + 40; render(); break;
@@ -6670,7 +6676,6 @@ document.addEventListener('click', async e => {
     case 'ppUndo': await ppUndo(b.dataset.id, b.dataset.at); await enSync(); break;
     case 'schLog': { const e = S.cardlog.find(y => y.id === b.dataset.id); if (!e) break; S.f.spend = {date: String(e.at || '').slice(0, 10) || iso(today()), what: e.note || '', amount: String(e.amount), cat: '', paidFrom: 'card', who: '', kind: '', told: '', note: '', sched: e.id}; S.tab = 'today'; S.todayOpen = 'log'; S.err = ''; render(); document.getElementById('f_spend_what')?.scrollIntoView({block: 'center'}); break; }
     case 'schCancel': S.f.spend = {date: iso(today()), what: '', amount: '', cat: '', paidFrom: 'joint', who: '', kind: 'need', told: 'before', note: ''}; S.todayOpen = ''; S.err = ''; render(); break;
-    case 'payLog': S.tab = 'today'; S.todayOpen = 'log'; S.err = ''; render(); document.getElementById('f_spend_what')?.scrollIntoView({block: 'center'}); break;
     case 'cardWk': await cardWkSave(b.dataset.w, b.dataset.v); break;
     case 'cardWkDel': await cardWkDel(b.dataset.w); break;
     case 'vbLog': await varLog(b.dataset.id); await enSync(); break;

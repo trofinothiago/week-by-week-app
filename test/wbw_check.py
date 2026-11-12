@@ -233,6 +233,11 @@ with sync_playwright() as p:
         f6 = ev(PROBE)
         check(f'Plan (cleaner, {wpx}px): €1M leaves the section bar; pensions, investing and the €1M road fold into "Later", and open fitting the phone', l6['bar'] and l6['closed'] and l6['has'] and not f6, {**l6, 'fit': f6[:6]})
     pg.set_viewport_size({'width': 390, 'height': 860}); ev("() => { S.tab = 'week'; render(); }")
+    r7 = {}
+    for where, sub, v in (('spending', 'spending', 'log'), ('transfers', 'transfers', 'add')):
+        r7[where] = ev(f"""() => {{ S.tab = 'money'; S.sub.money = '{sub}'; S.todayOpen = ''; render(); const v = document.getElementById('view'), noForm = !v.querySelector('#f_spend_what, #f_add_amount'), b = v.querySelector('[data-act=todayOpen][data-v={v}]');
+          if (!b) return {{noForm, btn: false}}; b.click(); const sh = document.querySelector('.ios-sheet'); const r = {{noForm, btn: true, tab: S.tab, sheet: !!sh && !!sh.querySelector('{'#f_spend_what' if v == 'log' else '#f_add_amount'}')}}; S.todayOpen = ''; S.tab = 'week'; render(); return r; }}""")
+    check('Repeated forms (cleaner): Spending and Transfers have no form of their own; their button opens the one Today sheet', all(x['noForm'] and x['btn'] and x['tab'] == 'today' and x['sheet'] for x in r7.values()), r7)
     check('System (cleaner): the self-check stays; Claude’s check is one line with the detail folded; only ideas waiting show, keeping their number; What’s new folded', sy['one'] and sy['three'] and not sy['built'] and sy['rowHidden'] and sy['newsFolded'] and sy['selfCheck'] and sy['noIdeas'], sy)
     ev("() => render()")
     ev("() => { S.canWrite = false; render(); }"); rv = view()
