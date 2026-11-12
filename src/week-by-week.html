@@ -785,7 +785,11 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const EUR = new Intl.NumberFormat('en-IE', {style:'currency', currency:'EUR'});
 const money = n => EUR.format((Math.round((+n || 0) * 100) / 100) || 0);
 const niceUp = v => { if (!(v > 0)) return 0; const p = Math.pow(10, Math.floor(Math.log10(v))); return [1, 2, 2.5, 5, 10].find(k => k * p >= v) * p; };   // a round number at or above v, for chart axes
-const yGrid = (ticks, y, L, W, R) => ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="var(--rule2)"/><text x="${L - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end" font-size="11" fill="var(--muted)" font-family="IBM Plex Mono, monospace">${esc(money(Math.round(v)).replace('.00', ''))}</text>`).join('');   // a chart's horizontal grid lines with their euro labels
+const narrowScreen = () => window.innerWidth < 600;
+const chartW = (wide, pdf) => !pdf && narrowScreen() ? 360 : wide;   // a chart's width: narrower on a phone screen (the PDF keeps the wide one)
+const monoText = (x, y, t, fill, o = {}) => `<text x="${x}" y="${y}"${o.anchor ? ` text-anchor="${o.anchor}"` : ''} font-size="${o.fs || 11}"${o.bold ? ' font-weight="600"' : ''} fill="${fill}" font-family="IBM Plex Mono, monospace">${t}</text>`;   // a chart's label in the numbers font
+const yGrid = (ticks, y, L, W, R, o = {}) => { const C = o.C || RC_LIVE, fmt = o.fmt || (v => money(Math.round(v)).replace('.00', ''));   // a chart's horizontal grid lines with their labels; o: C (colours), stroke(v) and sw(v) for a line drawn stronger, dx, fs, fmt
+  return ticks.filter((v, i, a) => a.indexOf(v) === i).map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="${o.stroke ? o.stroke(v) : C.rule}"${o.sw ? ` stroke-width="${o.sw(v)}"` : ''}/>${monoText(L - (o.dx || 6), (y(v) + 4).toFixed(1), esc(String(fmt(v))), C.muted, {anchor: 'end', fs: o.fs})}`).join(''); };
 const num = v => { const n = parseFloat(String(v ?? '').replace(/[€\s]/g,'').replace(',', '.')); return isFinite(n) ? n : 0; };
 const has = v => v !== undefined && v !== null && String(v).trim() !== '';
 const pad = n => String(n).padStart(2, '0');
@@ -1238,7 +1242,7 @@ function jointLeft(ws){   // what the Joint account has left this week: paydays 
     const r = am[w]; if (tr[w] && r && has(r.a) && has(r.p)) v += num(r.a) - num(r.p);
   }
   v -= sumAmt(weekSpending(ws, 'joint'));
-  v -= sumAmt(jointOut(ws, we).map(x => ({amount: x.amt})));   // Joint bills, loans and Klarna (Vault bills are paid by the Vault)
+  v -= sumAmt(accOut('joint', ws, we).map(x => ({amount: x.amt})));   // Joint bills, loans and Klarna (Vault bills are paid by the Vault)
   for (const m of movesIn(ws, we)){ if (m.to === 'joint') v += num(m.amount); if (m.from === 'joint') v -= num(m.amount); }   // money moved in or out by hand
   return Math.round(v * 100) / 100 || 0;
 }
@@ -1402,7 +1406,7 @@ function chartSVG(pr){
   const W = 680, H = 220, L = 58, R = 16, T = 14, B = 30;
   const pts = pr.pts, n = pts.length - 1;
   const max = Math.max(...pts.map(p => p.bal), 1);
-  const nice = (() => { const p = Math.pow(10, Math.floor(Math.log10(max))); const s = [1, 2, 2.5, 5, 10].find(k => k * p >= max) * p; return s; })();
+  const nice = niceUp(max);
   const x = i => L + (W - L - R) * (n ? i / n : 0);
   const y = v => T + (H - T - B) * (1 - v / nice);
   const line = pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.bal).toFixed(1)}`).join('');
@@ -1413,13 +1417,13 @@ function chartSVG(pr){
     ${yGrid(yt, y, L, W, R)}
     <path d="${area}" fill="var(--ok-t)"/>
     <path d="${line}" fill="none" stroke="var(--ok)" stroke-width="2.2" stroke-linejoin="round"/>
-    ${xi.map(i => `<text x="${x(i)}" y="${H - 8}" text-anchor="${i === 0 ? 'start' : i === n ? 'end' : 'middle'}" font-size="11" fill="var(--muted)" font-family="IBM Plex Mono, monospace">${esc(dshort(pts[i].d))}</text>`).join('')}
+    ${xi.map(i => monoText(x(i), H - 8, esc(dshort(pts[i].d)), 'var(--muted)', {anchor: i === 0 ? 'start' : i === n ? 'end' : 'middle'})).join('')}
     <circle cx="${x(0)}" cy="${y(pts[0].bal)}" r="4" fill="var(--bad)"/>
     ${pr.payoff ? `<circle cx="${x(n)}" cy="${y(0)}" r="5" fill="var(--ok)"/>` : ''}
   </svg>`;
 }
-function field(form, key, label, opts = {}){
-  const v = (S.f[form] || {})[key] ?? '';
+function field(form, key, label, opts = {}){   // one labelled control bound to S.f[form][key]; opts: hint, select, area, type, money, ph, wide, dflt (shown until something is typed)
+  const v0 = (S.f[form] || {})[key] ?? '', v = v0 === '' && opts.dflt != null ? opts.dflt : v0;
   const id = `f_${form}_${key}`;
   const lab = `<label for="${id}">${label}${opts.hint ? ` <small>${opts.hint}</small>` : ''}</label>`;
   let ctl;
@@ -1428,6 +1432,8 @@ function field(form, key, label, opts = {}){
   else ctl = `<input id="${id}" data-f="${form}.${key}" type="${opts.type || 'text'}"${opts.money ? ' inputmode="decimal"' : ''} value="${esc(v)}" placeholder="${esc(opts.ph || '')}" autocomplete="off">`;
   return `<div class="fld${opts.wide ? ' wide' : ''}">${lab}${ctl}</div>`;
 }
+const formEnd = (show, act, label, attrs = '') => `${errLine(show)}<div class="actions"><button class="btn strong" data-act="${act}"${attrs}>${label}</button></div>`;   // a small form's last line: its error, then its save button
+const errLine = (show = true) => S.err && show ? `<p class="err">${esc(S.err)}</p>` : '';   // the last error, under the form it belongs to
 function seg(form, key, choices){
   const v = (S.f[form] || {})[key];
   return `<div class="seg" role="group">${choices.map(([val, txt]) => `<button type="button" data-act="seg" data-form="${form}" data-key="${key}" data-val="${esc(val)}" aria-pressed="${String(v) === String(val)}">${esc(txt)}</button>`).join('')}</div>`;
@@ -1435,8 +1441,6 @@ function seg(form, key, choices){
 
 /* ---------- views ---------- */
 /* ---------- trend ---------- */
-const PAPER_C = {ok:'#1E7A4F', warn:'#A0560B', bad:'#AE352A', ink:'#16201B', muted:'#56655E', rule:'#E7ECE9', line:'#2D5B98'};
-const LIVE_C = {ok:'var(--ok)', warn:'var(--warn)', bad:'var(--bad)', ink:'var(--ink)', muted:'var(--muted)', rule:'var(--rule2)', line:'var(--joint)'};
 const checkNet = c => num(c.joint) + num(c.bills) + num(c.vaults) + num(c.ef) + num(c.aib) - num(c.card) - otherDebtAt(c.date);
 function sortedChecks(){ return S.checks.filter(c => pd(c.date)).sort((a, b) => a.date.localeCompare(b.date) || (a.at || '').localeCompare(b.at || '')); }
 function slopePerWeek(pts){
@@ -1662,7 +1666,7 @@ function commitTimeline(opt){
     ${bars}
     <line x1="${L}" x2="${W - R}" y1="${y(inc).toFixed(1)}" y2="${y(inc).toFixed(1)}" stroke="var(--ink)" stroke-width="1.5" stroke-dasharray="5 4"/>
     <text x="${W - R}" y="${(y(inc) - 5).toFixed(1)}" text-anchor="end" font-size="11" fill="var(--ink)" font-family="IBM Plex Sans, sans-serif">Income</text>
-    ${cs.map(({m}, i) => i % 3 === 0 ? `<text x="${(L + i * (bw + gap) + gap / 2 + bw / 2).toFixed(1)}" y="${H - 10}" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="IBM Plex Mono, monospace">${esc(fMY.format(m))}</text>` : '').join('')}
+    ${cs.map(({m}, i) => i % 3 === 0 ? monoText((L + i * (bw + gap) + gap / 2 + bw / 2).toFixed(1), H - 10, esc(fMY.format(m)), 'var(--muted)', {anchor: 'middle'}) : '').join('')}
   </svg>`;
 }
 function freedoms(pr){
@@ -1719,17 +1723,17 @@ function vBudget(){
   return `<div class="stack">${head}${pocketPanel()}${reviewPanel()}${timeline}${whatif}</div>`;
 }
 /* ---------- will the money be there? the Bills Pocket day by day, and room for new bills ---------- */
-const pocketBills = () => billsTimeline().filter(b => b.account === 'bills' && !b.vault);   // Vault bills are refilled from the Vault the day before; card bills are paid by the card payment
+const accBills = acc => billsTimeline().filter(b => b.account === acc && !b.vault);   // the bills an account pays ('bills' or 'joint'): Vault bills are paid by the Vault (refilled the day before), card bills by the card payment
 function newBillDates(x, a, z){ const out = []; if (!x || !x.start) return out; const step = Math.max(1, Math.round(num(x.every) || 1)), dd = Math.max(1, Math.min(28, Math.round(num(x.day) || x.start.getDate()))); for (let k = 0; k < Math.max(1, Math.round(num(x.months) || 12)); k++){ const d = dayIn(x.start.getFullYear(), x.start.getMonth() + k * step, dd); if (d >= a && d <= z && d >= x.start) out.push(d); } return out; }
-function pocketOut(a, z, opt = {}){   // every payment out of the Bills Pocket from a to z, both included
+function accOut(acc, a, z, opt = {}){   // every payment out of the Bills Pocket ('bills') or the Joint account ('joint') from a to z, both included: its bills, loans and Klarna; opt (Compare, the best day): shift, drop, extra
   const out = [], sh = opt.shift || {}, dr = opt.drop, gone = (b0, d) => dr && dr.ids.includes(b0.id) && dr.from && d >= dr.from;   // drop: bills that would end from a date (Compare)
-  for (const b0 of pocketBills()){
+  for (const b0 of accBills(acc)){
     if (dr && dr.ids.includes(b0.id)){ for (const d of occurrences(b0, a, z)) if (!gone(b0, d)) out.push({d, amt: occAmount(b0, d), name: occName(b0, d), id: b0.id}); continue; }
     if (sh[b0.id]){ for (const d of occurrences({...b0, dueDay: sh[b0.id]}, a, z)) out.push({d, amt: num(b0.amount), name: b0.name, id: b0.id}); continue; }
     for (const o of billDays(b0, a, z)) out.push({d: o.d, amt: occAmount(b0, o.due), name: occName(b0, o.due), id: b0.id});
   }
-  for (const k of S.loans.flatMap(loanInst)) if ((k.l.paidFrom || 'bills') === 'bills' && k.d >= a && k.d <= z) out.push({d: k.d, amt: k.amount, name: loanLabel(k), id: 'loan'});
-  for (const k of S.klarna.flatMap(klarnaInst)) if (k.p.paidFrom === 'bills' && k.d >= a && k.d <= z) out.push({d: k.d, amt: k.amount, name: klarnaLabel(k), id: 'klarna'});
+  for (const k of S.loans.flatMap(loanInst)) if ((k.l.paidFrom || 'bills') === acc && k.d >= a && k.d <= z) out.push({d: k.d, amt: k.amount, name: loanLabel(k), id: 'loan'});
+  for (const k of S.klarna.flatMap(klarnaInst)) if (k.p.paidFrom === acc && k.d >= a && k.d <= z) out.push({d: k.d, amt: k.amount, name: klarnaLabel(k), id: 'klarna'});
   if (opt.extra) for (const d of newBillDates(opt.extra, a, z)) out.push({d, amt: num(opt.extra.amount), name: opt.extra.name || 'New bill', id: '__new'});
   return out;
 }
@@ -1750,7 +1754,7 @@ function sinceCheck(acc, transfersIn){   // an account today (bills or joint): i
   let [ins, outs] = transfersIn(after);   // the weekly transfers ticked since the check
   for (const m of S.moves) if (after(mvStamp(m))){ if (m.to === acc) ins += num(m.amount); if (m.from === acc) outs += num(m.amount); }
   for (const x of S.spending) if (x.paidFrom === acc && after(spendStamp(x))) outs += num(x.amount);   // from the Bills Pocket only when its card had to pay (rule 1)
-  for (const x of (acc === 'bills' ? pocketOut : jointOut)(chkEarly(c) ? pd(c.date) : addDays(pd(c.date), 1), t)) outs += x.amt;
+  for (const x of accOut(acc, chkEarly(c) ? pd(c.date) : addDays(pd(c.date), 1), t)) outs += x.amt;
   return {v: Math.round((num(c[acc]) + ins - outs) * 100) / 100, known: true, c, ins, outs};
 }
 const stepStamp = (wk, wsI, id) => (wk.transfersAt || {})[id] || `${iso(cardPayday(pd(wsI)))}T12:00:00`;
@@ -1762,30 +1766,26 @@ function pocketStart(){   // what the Bills Pocket holds today
 function pocketSim(opt = {}){   // from today: each week's transfer lands on payday, each bill leaves on its date
   if (!flow().configured) return null;
   const t = today(), z = addDays(t, opt.days || 91), tB = opt.tB != null ? opt.tB : num(st().transferBills), s0 = opt.s0 || pocketStart();
-  let v = s0.v + num(opt.topUp); const ev = [];
+  const v = s0.v + num(opt.topUp), ev = [];
   for (let ws = weekStartOf(t); ws <= z; ws = addDays(ws, 7)){
     if ((((S.weeks[iso(ws)] || {}).transfers) || {}).bills) continue;   // already in the balance
     let d = cardPayday(ws); if (d < t) d = t;   // a late transfer should go in today
     if (d <= z && tB > 0) ev.push({d, amt: tB, name: 'Weekly transfer in', kind: 'in'});
   }
-  for (const x of pocketOut(addDays(t, 1), z, opt)) ev.push({...x, kind: 'out'});
-  ev.sort((a, b) => a.d - b.d || (a.kind === 'out' ? -1 : 1));   // on the same day, the bill is assumed to go out before the transfer lands
+  const W = simWalk(v, t, ev.concat(accOut('bills', addDays(t, 1), z, opt).map(x => ({...x, kind: 'out'}))));
+  return {...W, s0, rows: W.rows.filter(r => r.kind === 'out'), tB, z};
+}
+function simWalk(v, t, ev){   // an account day by day from v today: money in and out on their days (on the same day, a bill is assumed to go out before money lands); the lowest point and the first day it would be short
+  ev.sort((a, b) => a.d - b.d || (a.kind === 'out' ? -1 : 1));
   let min = {v, d: t, name: ''}, first = null; const rows = [], pts = [{d: t, v}];
   for (const e of ev){
-    const before = v; v = Math.round((v + (e.kind === 'in' ? e.amt : -e.amt)) * 100) / 100;
-    if (e.kind === 'out'){ rows.push({...e, before, after: v, ok: v >= -.005}); if (v < min.v) min = {v, d: e.d, name: e.name}; if (!first && v < -.005) first = {d: e.d, name: e.name, short: -v, amt: e.amt}; }
+    const before = v; v = Math.round((v + (e.kind === 'in' ? e.amt : -e.amt)) * 100) / 100; rows.push({...e, before, after: v, ok: v >= -.005});
+    if (e.kind === 'out'){ if (v < min.v) min = {v, d: e.d, name: e.name}; if (!first && v < -.005) first = {d: e.d, name: e.name, short: -v, amt: e.amt}; }
     pts.push({d: e.d, v});
   }
-  return {s0, rows, min, first, pts, end: v, tB, z};
+  return {rows, min, first, pts, end: v};
 }
 /* the Joint account day by day: needed when a pay comes monthly or every 2 weeks, so the weekly transfers live on what the Joint account holds */
-function jointOut(a, z){   // bills, loans and Klarna paid from the Joint account, from a to z
-  const out = [];
-  for (const b of billsTimeline().filter(x => x.account === 'joint' && !x.vault)) for (const o of billDays(b, a, z)) out.push({d: o.d, amt: occAmount(b, o.due), name: occName(b, o.due)});
-  for (const k of S.loans.flatMap(loanInst)) if ((k.l.paidFrom || 'bills') === 'joint' && k.d >= a && k.d <= z) out.push({d: k.d, amt: k.amount, name: loanLabel(k)});
-  for (const k of S.klarna.flatMap(klarnaInst)) if (k.p.paidFrom === 'joint' && k.d >= a && k.d <= z) out.push({d: k.d, amt: k.amount, name: klarnaLabel(k)});
-  return out;
-}
 function stepSent(wsI, x){   // what a ticked weekly transfer really moved: the real amount typed, the week's Vault split, the card payment logged, the plan of that week, else today's plan
   const wk = S.weeks[wsI] || {}, am = (wk.amounts || {})[x.id];
   if (am && has(am.a)) return num(am.a);
@@ -1805,7 +1805,7 @@ function jointStart(){   // the Joint account today
 }
 function jointSim(opt = {}){   // from today: each pay on its real day, the weekly transfers and the shop out, Joint bills on their dates
   if (!flow().configured) return null;
-  const t = today(), z = addDays(t, opt.days || 91), s0 = jointStart(); let v = s0.v; const ev = [];
+  const t = today(), z = addDays(t, opt.days || 91), s0 = jointStart(), ev = [];
   const shop = essentialsLearned().amount || 0;   // the shop, cigarettes and drinks: what they really cost each week
   for (let ws = weekStartOf(t); ws <= z; ws = addDays(ws, 7)){
     const wsI = iso(ws), tr = (S.weeks[wsI] || {}).transfers || {}, cur = wsI === iso(weekStartOf(t));
@@ -1815,13 +1815,7 @@ function jointSim(opt = {}){   // from today: each pay on its real day, the week
     const left = cur ? Math.max(0, shop - sumAmt(weekSpending(ws, 'joint').filter(x => ESS_CATS.includes(x.cat)))) : shop;
     if (left > 0) ev.push({d: ws < t ? t : ws, amt: left, name: 'Shop, cigarettes and drinks', kind: 'out'});
   }
-  for (const x of jointOut(addDays(t, 1), z)) ev.push({...x, kind: 'out'});
-  ev.sort((a, b) => a.d - b.d || (a.kind === 'out' ? -1 : 1));
-  let min = {v, d: t, name: ''}, first = null; const pts = [{d: t, v}], rows = [];
-  for (const e of ev){ const before = v; v = Math.round((v + (e.kind === 'in' ? e.amt : -e.amt)) * 100) / 100; rows.push({...e, before, after: v});
-    if (e.kind === 'out'){ if (v < min.v) min = {v, d: e.d, name: e.name}; if (!first && v < -.005) first = {d: e.d, name: e.name, short: -v, amt: e.amt}; }
-    pts.push({d: e.d, v}); }
-  return {s0, min, first, pts, rows, end: v};
+  return {...simWalk(s0.v, t, ev.concat(accOut('joint', addDays(t, 1), z).map(x => ({...x, kind: 'out'})))), s0};
 }
 function bestDay(opt){   // the day of the month that keeps the Bills Pocket highest: for a bill already in (opt.id) or a new one (opt.extra)
   let best = null;
@@ -1838,7 +1832,7 @@ function dueAdvice(){   // will every bill find its money? if not: the one-off t
   if (S._pk && S._pk.sig === sig) return S._pk.v;
   const s0 = pocketStart(), base = pocketSim({days: 91, s0}), list = [];
   if (base.first){
-    for (const b of pocketBills().filter(x => !x._seg && x.freq === 'monthly' && num(x.amount) >= 25)){
+    for (const b of accBills('bills').filter(x => !x._seg && x.freq === 'monthly' && num(x.amount) >= 25)){
       const bd = bestDay({id: b.id, s0}); if (!bd || bd.day === num(b.dueDay)) continue;
       if (bd.min > base.min.v + 20) list.push({b, day: bd.day, min: bd.min, fixes: bd.min >= -.005, gain: bd.min - base.min.v});
     }
@@ -1931,7 +1925,7 @@ function debtMonthsSVG(stats){
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Debt at the end of each month">
     ${yGrid([0, max / 1.1 / 2, max / 1.1], y, L, W, R)}
     ${line('debt', 'var(--s4)')}${line('card', 'var(--s5)')}
-    ${stats.map((s, i) => `<text x="${x(i).toFixed(1)}" y="${H - 8}" text-anchor="${i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'}" font-size="11" fill="var(--muted)" font-family="IBM Plex Mono, monospace">${esc(fMY.format(s.a))}</text>`).join('')}
+    ${stats.map((s, i) => monoText(x(i).toFixed(1), H - 8, esc(fMY.format(s.a)), 'var(--muted)', {anchor: i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'})).join('')}
   </svg>`;
 }
 function monthCompare(m0){
@@ -2010,7 +2004,7 @@ function vWise(){
   return foldQuiet(due || warns.length > 0 || unl.length > 0, !!(S.f.wise || {}).eur || S.errAt === 'wise', `Transfers to Brazil <span class="mut">· ${list.length ? `${list.length} logged` : 'none yet'} ›</span>`, `<section class="panel"><header><h2>Transfers to Brazil</h2><span class="mut" style="font-size:.85rem">Revolut → Wise → Nubank</span></header>
     ${warns.map(w => `<div class="banner">${esc(w)}</div>`).join('')}
     ${unl.map(w => `<div class="banner"><b>${esc(w.purpose || 'This transfer')} isn’t a bill yet</b>, so nothing is being saved for the next transfer. Add it as a bill: the Vault then saves for it every week, Pay shows the next transfer 3 days before it’s due, and this transfer (${dshort(pd(w.date))}, ${money(w.eur)}) goes into its history.${S.canWrite ? `<div class="actions"><button class="btn strong" data-act="wiseToBill" data-id="${esc(w.id)}">Add it as a bill</button></div>` : ''}</div>`).join('')}
-    ${form}${S.err && S.errAt === 'wise' ? `<p class="err">${esc(S.err)}</p>` : ''}
+    ${form}${errLine(S.errAt === 'wise')}
     ${list.length ? `<div class="tablewrap"><table><thead><tr><th>Date</th><th>What for</th><th class="r">Sent</th><th class="r">Wise fee</th><th class="r">Received</th><th class="r">Rate</th><th></th></tr></thead><tbody>
       ${list.map(w => { const net = num(w.eur) - num(w.fee); return `<tr><td class="num">${dshort(pd(w.date))}</td><td>${esc(w.purpose || '')}</td><td class="r num">${money(w.eur)}</td><td class="r num">${w.fee ? money(w.fee) : '—'}</td><td class="r num">${w.brl ? reais(w.brl) : '—'}</td><td class="r num">${w.brl && net > 0 ? `R$ ${(num(w.brl) / net).toFixed(3)}` : '—'}</td><td>${S.canWrite ? `<button class="btn small danger" data-act="wiseDel" data-id="${esc(w.id)}">Delete</button>` : ''}</td></tr>`; }).join('')}
       </tbody></table></div><p class="mut" style="font-size:.85rem">Rate is reais received for each euro after the Wise fee. Fees so far: ${money(list.reduce((a, w) => a + num(w.fee), 0))}.</p>` : '<p class="mut">No transfers logged yet.</p>'}
@@ -2050,8 +2044,7 @@ function addPanel(){
     <div class="fld"><span class="label">Who put it in?</span>${seg('add', 'who', Object.entries(ADD_WHO))}</div>
     <div class="form">${field('add', 'note', 'Note (optional)', {wide: true, ph: 'Cash from the car boot sale'})}</div>
     ${note}
-    ${S.err && S.errAt === 'add' ? `<p class="err">${esc(S.err)}</p>` : ''}
-    <div class="actions"><button class="btn strong" data-act="addSave">Add the money</button></div>
+    ${formEnd(S.errAt === 'add', 'addSave', 'Add the money')}
     ${month.length ? `<h3>Added this month <small class="mut">${money(sumAmt(month))} · ${esc(addsWhoText(month))}</small></h3><div class="ledger">${month.map(m => `<div class="lrow"><span class="d">${dshort(pd(m.date))}</span><span class="n"><b>${esc(ADD_WHO[m.added.who] || '')}</b> <small>${esc(ADD_HOW[m.added.how] || '')} → ${esc(mvShort(m.to))}${m.note ? ` · ${esc(m.note)}` : ''}</small></span><span class="a">+${money(m.amount)}</span>${S.canWrite ? `<button class="linkbtn" data-act="mvDel" data-id="${esc(m.id)}">${S.confirmMv === m.id ? 'Tap again to undo' : 'Undo'}</button>` : ''}</div>`).join('')}</div>` : ''}
   </section>`;
 }
@@ -2110,8 +2103,7 @@ function movesPanel(){
     ${f.from === 'vaults' && vb.length ? `<div class="fld"><label for="f_mv_bill">Which bill is it for? <small>The Vault only pays its bills</small></label><select id="f_mv_bill" data-f="mv.bill"><option value="">Not for a bill</option>${vb.map(b => `<option value="${esc(b.id)}"${f.bill === b.id ? ' selected' : ''}>${esc(b.name)} · next ${dshort(nextDue(b))}</option>`).join('')}</select></div>` : ''}
     ${step ? `<div class="fld"><span class="label">Is this this week’s planned transfer (${esc(shortRoute(step.x.from, step.x.to))}${step.x.amount ? `, ${money(step.x.amount)}` : ''})?</span>${seg('mv', 'kind', [['step', 'Yes: tick it'], ['extra', 'No: an extra move']])}</div>` : ''}
     ${rules.map(r => `<p class="mvnote ${r.st}">${esc(r.t)}</p>`).join('')}
-    ${S.err && S.errAt === 'mv' ? `<p class="err">${esc(S.err)}</p>` : ''}
-    <div class="actions"><button class="btn strong" data-act="mvSave">Log the move</button></div></div>` : '';
+    ${formEnd(S.errAt === 'mv', 'mvSave', 'Log the move')}</div>` : '';
   return `<section class="panel" id="movesPanel"><header><h2>Move money between accounts</h2><span class="mut" style="font-size:.85rem">For moves outside the weekly plan</span></header>
     <p class="mut" style="font-size:.9rem">Moved money by hand? Log it here so every balance, the free money, the emergency fund, the card and Rory’s report follow. The weekly transfers are ticked in Pay or Week. Money sent to Brazil goes in Wise below.</p>
     ${form}
@@ -2286,7 +2278,7 @@ function billForm(){
       if (isI && pd(b.anchor)){ const n = Math.max(1, Math.min(12, Math.round(num(b.n) || 12))); return `<h3 style="margin-top:8px">Before you take it on</h3>${newBillCheckHtml({name: b.name || 'New bill', amount: Math.floor(num(b.amount) / n * 100) / 100, start: pd(b.anchor), months: n, day: pd(b.anchor).getDate()})}`; }
       return ''; })()}
     ${billAgreeBox(b)}
-    ${S.err ? `<p class="err">${esc(S.err)}</p>` : ''}
+    ${errLine()}
     <div class="actions"><button class="btn strong" data-act="billSave"${S.busy ? ' disabled' : ''}>${S.busy ? 'Working out the category…' : b._id ? 'Save changes' : 'Add bill'}</button><button class="btn" data-act="billCancel">Cancel</button>${b._id ? '<button class="btn danger" data-act="billDelete">Delete bill</button>' : ''}</div></div>`;
 }
 
@@ -2328,8 +2320,7 @@ function vKlarna(){
     <div class="form">${field('kl', 'what', 'What did you buy', {ph:'iPhone 18 Pro Max'})}${field('kl', 'total', 'Total (€)', {money:true, ph:'1690.00'})}${field('kl', 'date', 'Date of purchase', {type:'date'})}${field('kl', 'n', 'Instalments', {select:[['3','3'],['4','4'],['2','2'],['6','6'],['12','12']]})}${field('kl', 'every', 'How often', {select:[['month','Every month'],['2w','Every 2 weeks']]})}${field('kl', 'first', 'First payment', {type:'date', hint:'Usually the day you buy'})}${field('kl', 'paidFrom', 'Instalments charged to', {select:[['card','AIB credit card'],['joint','Joint account']]})}</div>
     <div class="fld"><span class="label">Who bought it?</span>${seg('kl', 'who', Object.entries(WHO))}</div>
     ${tot > 0 ? `<p class="tip">${n} instalments of about <b>${money(tot / n)}</b>${pd(f.first || f.date) ? `, from ${dlong(pd(f.first || f.date))}` : ''}.</p>` : ''}
-    ${S.err && S.tab === 'money' ? `<p class="err">${esc(S.err)}</p>` : ''}
-    <div class="actions"><button class="btn strong" data-act="klSave">Save Klarna plan</button></div></div>` : '';
+    ${formEnd(S.tab === 'money', 'klSave', 'Save Klarna plan')}</div>` : '';
   return foldQuiet(active.length > 0, !!(f.what || f.total), `＋ Klarna <span class="mut">· no plans running</span>`, `<section class="panel"><header><h2>Klarna plans</h2>${left ? `<span class="mono">${money(left)} still to pay</span>` : ''}</header>
     ${form}
     ${active.length ? `<div class="stack">${active.map(p => klarnaPlanHtml(p, {del: true, week: weekStartOf(today())})).join('')}</div>` : '<p class="mut">No Klarna plans running.</p>'}
@@ -2374,8 +2365,7 @@ function vLoans(){
   const form = S.canWrite ? `<div class="formbox"><h3>Log a loan or finance plan</h3><p class="mut" style="font-size:.9rem">Humm, shop finance, a personal loan. Log it once and the page works out every instalment.</p>
     <div class="form">${field('ln', 'what', 'What was financed', {ph:'OLED TV'})}${field('ln', 'lender', 'Lender', {ph:'Humm'})}${field('ln', 'financed', 'Amount financed (€)', {money:true, ph:'1320.00', hint:'Price of what you bought'})}${field('ln', 'instalment', 'Instalment (€)', {money:true, ph:'55.00'})}${field('ln', 'n', 'Number of instalments', {money:true, ph:'24'})}${field('ln', 'every', 'How often', {select:[['month','Monthly'],['2w','Every 2 weeks'],['week','Weekly']]})}${field('ln', 'start', 'Date of the agreement', {type:'date'})}${field('ln', 'first', 'First instalment', {type:'date'})}${field('ln', 'paidFrom', 'Paid from', {select:[['bills','Bills Pocket (direct debit)'],['joint','Joint account'],['thiago',"Thiago's personal account"],['rory',"Rory's personal account"],['cash','Cash at home (emergencies only: rule 8)']]})}${field('ln', 'lastAmount', 'Last instalment, if different (€)', {money:true, ph:'Optional'})}${field('ln', 'note', 'Note', {ph:'Agreement number, anything useful', wide:true})}</div>
     <div class="fld"><span class="label">Whose purchase?</span>${seg('ln', 'who', Object.entries(WHO))}</div>
-    ${preview}${S.err && S.tab === 'money' ? `<p class="err">${esc(S.err)}</p>` : ''}
-    <div class="actions"><button class="btn strong" data-act="lnSave">Save loan</button></div></div>` : '';
+    ${preview}${formEnd(S.tab === 'money', 'lnSave', 'Save loan')}</div>` : '';
   return `<section class="panel"><header><h2>Loans and finance</h2>${left ? `<span class="mono">${money(left)} still to pay</span>` : ''}</header>
     ${form}
     ${active.length ? `<div class="stack">${active.map(l => loanHtml(l, {del: true, week: weekStartOf(today())})).join('')}</div>` : '<p class="mut">No loans running.</p>'}
@@ -2425,7 +2415,7 @@ function vCard(){
       <div class="fld"><span class="label">Did Rory know before?</span>${seg('sch', 'told', Object.entries(TOLD))}</div>
       ${(S.f.sch || {}).kind && (S.f.sch || {}).kind !== 'need' && cardState() && cardState().bal > 0 ? '<p class="err">Rule 3: wants never go on the card while it owes anything. Tell Rory, and pay it from the Joint account’s free money instead.</p>' : ''}
       <div class="actions"><button class="btn strong" data-act="cardSch">Add upcoming charge</button></div></div>
-    ${S.err ? `<p class="err">${esc(S.err)}</p>` : ''}</section>` : '';
+    ${errLine()}</section>` : '';
 
   const log = sortedCardlog().reverse();
   const T = {balance:'Balance from AIB', payment:'Extra payment', refund:'Refund', scheduled:'Upcoming charge', interest:'Interest (statement)'};
@@ -2487,7 +2477,7 @@ function spendFormPanel(){
     ${f.split ? '' : `<div class="fld"><span class="label">What kind of purchase</span>${seg('spend', 'kind', Object.entries(KIND))}</div>`}
     <div class="fld"><span class="label">Did Rory know?</span>${seg('spend', 'told', Object.entries(TOLD))}</div>
     ${f.kind === 'impulse' || f.told !== 'before' ? `<div class="form">${field('spend', 'note', 'What was going on when you bought it?', {area:true, wide:true, ph:'Tired after a long day, scrolling the eShop…'})}</div>` : ''}
-    ${S.err ? `<p class="err">${esc(S.err)}</p>` : ''}
+    ${errLine()}
     ${f.sched ? (() => { const ch = S.cardlog.find(e => e.id === f.sched); return ch ? `<p class="tip">Pre-order: charged to the AIB card on <b>${dlong(pd(ch.date))}</b>. Logging it here links the two, so it’s counted once.</p>` : ''; })() : ''}
     <div class="actions"><button class="btn strong" data-act="${f.split ? 'splitSave' : 'spendSave'}">${f.split ? 'Log the receipt' : 'Log purchase'}</button>${f.paidFrom === 'card' ? '<span class="chip bad">Goes on the card</span>' : f.paidFrom === 'bills' ? '<span class="chip bad">From the Bills Pocket: rule 1</span>' : ''}${f.sched ? '<button class="btn" data-act="schCancel">Cancel</button>' : ''}</div></section>` : '';
 }
@@ -2564,8 +2554,8 @@ function reportData(ws){
   return {we, wsI, weI, fl, wk, tr, sp, slipsW, isCurrent, cs, pr, cardNow, delta, freeLeftW, jointW, steps, done, nextList, td, sig, dz, commit, fr, sk, mc, plan, bal, month};
 }
 /* ---------- report charts (SVG for the shapes, HTML for bars; hex colours for the PDF) ---------- */
-const RC_LIVE = {ok:'var(--ok)', bad:'var(--bad)', s1:'var(--s1)', s2:'var(--s2)', s3:'var(--s3)', s4:'var(--s4)', s5:'var(--s5)', s6:'var(--s6)', ink:'var(--ink)', muted:'var(--muted)', rule:'var(--rule2)', surface:'var(--sheet)', free:'var(--rule)', thiago:'var(--pocket)', rory:'var(--personal)', both:'var(--joint)'};
-const RC_PAPER = {pdf:true, ok:'#1E7A4F', bad:'#AE352A', s1:'#2a78d6', s2:'#eb6834', s3:'#1baf7a', s4:'#eda100', s5:'#e87ba4', s6:'#008300', ink:'#16201B', muted:'#56655E', rule:'#E7ECE9', surface:'#FFFFFF', free:'#CFD8D3', thiago:'#6A4AA6', rory:'#866427', both:'#2D5B98'};
+const RC_LIVE = {ok:'var(--ok)', warn:'var(--warn)', bad:'var(--bad)', s1:'var(--s1)', s2:'var(--s2)', s3:'var(--s3)', s4:'var(--s4)', s5:'var(--s5)', s6:'var(--s6)', ink:'var(--ink)', muted:'var(--muted)', rule:'var(--rule2)', surface:'var(--sheet)', free:'var(--rule)', thiago:'var(--pocket)', rory:'var(--personal)', both:'var(--joint)'};
+const RC_PAPER = {pdf:true, ok:'#1E7A4F', warn:'#A0560B', bad:'#AE352A', s1:'#2a78d6', s2:'#eb6834', s3:'#1baf7a', s4:'#eda100', s5:'#e87ba4', s6:'#008300', ink:'#16201B', muted:'#56655E', rule:'#E7ECE9', surface:'#FFFFFF', free:'#CFD8D3', thiago:'#6A4AA6', rory:'#866427', both:'#2D5B98'};
 const shortMoney = v => { const a = Math.abs(v), s = v < 0 ? '−' : ''; return a >= 999500 ? `${s}€${(a / 1e6).toFixed(a >= 1e7 ? 0 : 2).replace(/\.?0+$/, '')}M` : a >= 10000 ? `${s}€${(a / 1000).toFixed(0)}K` : a >= 1000 ? `${s}€${(a / 1000).toFixed(1).replace('.0', '')}K` : `${s}€${Math.round(a)}`; };
 function donutHTML(segs, center, C, label){
   const list = segs.filter(s => s.v > 0.005), tot = list.reduce((a, s) => a + s.v, 0);
@@ -2587,7 +2577,7 @@ function hbarsHTML(rows, opts = {}){
 }
 function lineChartSVG(past, future, C, opts = {}){
   const all = past.concat(future); if (all.length < 2) return '';
-  const nw = !opts.pdf && window.innerWidth < 600, W = nw ? 360 : 640, H = nw ? 230 : 210, L = 46, R = nw ? 68 : 70, T = 16, B = 28, t0 = all[0].d, t1 = all[all.length - 1].d, span = Math.max(1, dayDiff(t0, t1));
+  const W = chartW(640, opts.pdf), nw = W === 360, H = nw ? 230 : 210, L = 46, R = nw ? 68 : 70, T = 16, B = 28, t0 = all[0].d, t1 = all[all.length - 1].d, span = Math.max(1, dayDiff(t0, t1));
   let hi = niceUp(Math.max(0, ...all.map(p => p.v))), lo = -niceUp(-Math.min(0, ...all.map(p => p.v))); if (hi === lo) hi = lo + 1;
   const x = d => L + (W - L - R) * dayDiff(t0, d) / span, y = v => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
   const path = pts => pts.map((p, i) => `${i ? 'L' : 'M'}${x(p.d).toFixed(1)},${y(p.v).toFixed(1)}`).join('');
@@ -2596,15 +2586,15 @@ function lineChartSVG(past, future, C, opts = {}){
   const area = past.length > 1 ? `<path d="${path(past)}L${x(now.d).toFixed(1)},${y(0).toFixed(1)}L${x(past[0].d).toFixed(1)},${y(0).toFixed(1)}Z" fill="${col}" fill-opacity=".12"/>` : '';
   const end = future.length ? future[future.length - 1] : null;
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.label || 'Line chart')}">
-    ${(lo < 0 ? [lo, 0, hi] : [0, hi / 2, hi]).filter((v, i, a) => a.indexOf(v) === i).map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="${v === 0 && lo < 0 ? C.muted : C.rule}"/><text x="${L - 8}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end" font-size="12" fill="${C.muted}" font-family="IBM Plex Mono, monospace">${esc(shortMoney(v))}</text>`).join('')}
+    ${yGrid(lo < 0 ? [lo, 0, hi] : [0, hi / 2, hi], y, L, W, R, {C, stroke: v => v === 0 && lo < 0 ? C.muted : C.rule, dx: 8, fs: 12, fmt: shortMoney})}
     ${area}
     ${past.length > 1 ? `<path d="${path(past)}" fill="none" stroke="${col}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
     ${fut.length > 1 ? `<path d="${path(fut)}" fill="none" stroke="${col}" stroke-width="2.5" stroke-opacity=".7" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
     ${past.map(p => `<circle cx="${x(p.d).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="${p === now ? 6 : 3.5}" fill="${col}" stroke="${C.surface}" stroke-width="2"><title>${esc(dlong(p.d))}: ${esc(money(p.v))}</title></circle>`).join('')}
-    <text x="${(x(now.d) + 9).toFixed(1)}" y="${(y(now.v) - 9).toFixed(1)}" font-size="13" font-weight="600" fill="${C.ink}" font-family="IBM Plex Mono, monospace">${esc(shortMoney(now.v))} now</text>
-    ${end ? `<circle cx="${x(end.d).toFixed(1)}" cy="${y(end.v).toFixed(1)}" r="6" fill="${C.surface}" stroke="${col}" stroke-width="2.5"/><text x="${(x(end.d) + 10).toFixed(1)}" y="${(y(end.v) - 6).toFixed(1)}" font-size="12" font-weight="600" fill="${C.ink}" font-family="IBM Plex Sans, sans-serif">${esc(opts.endLabel || shortMoney(end.v))}</text><text x="${(x(end.d) + 10).toFixed(1)}" y="${(y(end.v) + 9).toFixed(1)}" font-size="11" fill="${C.muted}" font-family="IBM Plex Mono, monospace">${esc(fMYL.format(end.d))}</text>` : ''}
-    ${x(now.d) - L > 70 ? `<text x="${L}" y="${H - 8}" font-size="11" fill="${C.muted}" font-family="IBM Plex Mono, monospace">${esc(dshort(t0))}</text>` : ''}
-    ${future.length ? `<text x="${x(now.d).toFixed(1)}" y="${H - 8}" text-anchor="${x(now.d) - L > 70 ? 'middle' : 'start'}" font-size="11" fill="${C.muted}" font-family="IBM Plex Mono, monospace">today</text>` : ''}
+    ${monoText((x(now.d) + 9).toFixed(1), (y(now.v) - 9).toFixed(1), `${esc(shortMoney(now.v))} now`, C.ink, {fs: 13, bold: true})}
+    ${end ? `<circle cx="${x(end.d).toFixed(1)}" cy="${y(end.v).toFixed(1)}" r="6" fill="${C.surface}" stroke="${col}" stroke-width="2.5"/><text x="${(x(end.d) + 10).toFixed(1)}" y="${(y(end.v) - 6).toFixed(1)}" font-size="12" font-weight="600" fill="${C.ink}" font-family="IBM Plex Sans, sans-serif">${esc(opts.endLabel || shortMoney(end.v))}</text>${monoText((x(end.d) + 10).toFixed(1), (y(end.v) + 9).toFixed(1), esc(fMYL.format(end.d)), C.muted)}` : ''}
+    ${x(now.d) - L > 70 ? monoText(L, H - 8, esc(dshort(t0)), C.muted) : ''}
+    ${future.length ? monoText(x(now.d).toFixed(1), H - 8, 'today', C.muted, {anchor: x(now.d) - L > 70 ? 'middle' : 'start'}) : ''}
   </svg>`;
 }
 function debtSeries(D){
@@ -2638,7 +2628,7 @@ function reportBackstage(ws, forPdf, D, preview){
     : `<div class="tchk">${D.steps.map(x => `<label><input type="checkbox" data-act="wkToggle" data-k="${esc(x.id)}"${tr[x.id] ? ' checked' : ''}${S.canWrite ? '' : ' disabled'}> ${esc(x.label)}${x.amount ? ` <span class="mono mut">${money(x.amount)}</span>` : ''}</label>`).join('')}</div>`;
   const noteHtml = forPdf || preview ? '' : `<section class="panel"><h3>Note for Rory</h3><p class="mut" style="font-size:.88rem">Shown on page 1 as a quote. Keep it short.</p>${S.canWrite ? `<div class="fld"><textarea id="f_note_${wsI}" data-f="note.${wsI}" placeholder="Anything Rory should know this week, in your own words.">${esc(S.f.note[wsI] ?? wk.note ?? '')}</textarea></div><div class="actions"><button class="btn" data-act="wkNote">Save note</button></div>` : (wk.note ? `<p style="white-space:pre-wrap">${esc(wk.note)}</p>` : '<p class="mut">No note this week.</p>')}</section>`;
   const tdHtml = isCurrent ? (() => { const td = D.td, ts = TSTATE[td.state]; return `<section class="panel"><h3>Trend</h3>
-      <div class="meter">${gaugeSVG(td, forPdf ? PAPER_C : LIVE_C)}<div class="meterinfo"><span class="chip ${ts.cls}" style="font-size:.85rem">${ts.icon} ${ts.label}</span><b class="mono">${td.s == null ? '—' : `${td.s >= 0 ? '+' : '−'}${money(Math.abs(td.s))} a week`}</b><p>${trendSummary(td)}</p></div></div>
+      <div class="meter">${gaugeSVG(td, forPdf ? RC_PAPER : RC_LIVE)}<div class="meterinfo"><span class="chip ${ts.cls}" style="font-size:.85rem">${ts.icon} ${ts.label}</span><b class="mono">${td.s == null ? '—' : `${td.s >= 0 ? '+' : '−'}${money(Math.abs(td.s))} a week`}</b><p>${trendSummary(td)}</p></div></div>
       <div class="advice"><span class="label">What to do this week</span><p>${esc(advice(td, D.sig))}</p></div>
       ${sigRows(D.sig)}</section>`; })() : '';
   const budget = isCurrent && D.commit.income > 0 ? `<section class="panel"><h3>Budget: ${pctTxt(D.commit.pct)} of income committed ${sigChip(commitState(D.commit.pct))}</h3><p>Free each month: <b class="mono">${money(D.commit.free)}</b> (${money(D.commit.free * 12 / 52)} a week).</p>${commitBar(D.commit)}${D.fr[0] ? `<p class="mut">Next to end: ${esc(D.fr[0].name)} in ${esc(fMY.format(D.fr[0].d))}, freeing ${money(D.fr[0].amt)} a month.</p>` : ''}</section>` : '';
@@ -2696,16 +2686,15 @@ function milSim(monthly, rate, vehicle, start0, years){
   return {pts: out, hit, marks, end: pia + etf};
 }
 function milChartSVG(lines, C){
-  const W = !C.pdf && window.innerWidth < 600 ? 360 : 680, H = 240, L = 54, R = 70, T = 16, B = 28;
+  const W = chartW(680, C.pdf), H = 240, L = 54, R = 70, T = 16, B = 28;
   const all = lines.flatMap(l => l.pts); if (all.length < 2) return '';
   const t0 = all[0].d, t1 = lines[0].pts[lines[0].pts.length - 1].d, span = Math.max(1, dayDiff(t0, t1));
   const hi = Math.max(MIL * 1.1, ...all.map(p => p.v)), x = d => L + (W - L - R) * dayDiff(t0, d) / span, y = v => T + (H - T - B) * (1 - Math.min(v, hi) / hi);
   const path = pts => pts.map((p, i) => `${i ? 'L' : 'M'}${x(p.d).toFixed(1)},${y(p.v).toFixed(1)}`).join('');
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Investments growing towards one million euros">
-    ${[0, 500000, MIL].map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="${v === MIL ? C.ink : C.rule}" stroke-width="${v === MIL ? 1.5 : 1}"/><text x="${L - 8}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end" font-size="12" fill="${C.muted}" font-family="IBM Plex Mono, monospace">${v === MIL ? '€1M' : shortMoney(v)}</text>`).join('')}
+    ${yGrid([0, 500000, MIL], y, L, W, R, {C, stroke: v => v === MIL ? C.ink : C.rule, sw: v => v === MIL ? 1.5 : 1, dx: 8, fs: 12, fmt: v => v === MIL ? '€1M' : shortMoney(v)})}
     ${lines.map(l => `<path d="${path(l.pts)}" fill="none" stroke="${l.c}" stroke-width="2.5" stroke-linejoin="round"/>${l.hit ? `<circle cx="${x(l.hit).toFixed(1)}" cy="${y(MIL).toFixed(1)}" r="5" fill="${l.c}" stroke="${C.surface}" stroke-width="2"/>` : ''}<text x="${(W - R + 6).toFixed(1)}" y="${(y(l.pts[l.pts.length - 1].v) + 4).toFixed(1)}" font-size="12" font-weight="600" fill="${C.ink}" font-family="IBM Plex Sans, sans-serif">${esc(l.label)}</text>`).join('')}
-    <text x="${L}" y="${H - 8}" font-size="11" fill="${C.muted}" font-family="IBM Plex Mono, monospace">${t0.getFullYear()}</text>
-    <text x="${W - R}" y="${H - 8}" text-anchor="end" font-size="11" fill="${C.muted}" font-family="IBM Plex Mono, monospace">${t1.getFullYear()}</text>
+    ${monoText(L, H - 8, t0.getFullYear(), C.muted)}${monoText(W - R, H - 8, t1.getFullYear(), C.muted, {anchor: 'end'})}
   </svg>`;
 }
 const yrsTxt = (a, b) => { if (!a || !b) return '—'; const y = dayDiff(a, b) / 365.25; return y < 1 ? `${Math.round(y * 12)} months` : `${y.toFixed(y < 10 ? 1 : 0)} years`; };
@@ -3298,17 +3287,16 @@ function planSVG(sim, C){
   if (pts.length < 2) return '';
   const W = 680, H = 220, L = 62, R = 14, T = 14, B = 30, t0 = pts[0].d, span = Math.max(1, dayDiff(t0, pts[pts.length - 1].d));
   const max = Math.max(1, ...pts.map(p => Math.max(p.debt, p.ef)));
-  const nice = (() => { const p = Math.pow(10, Math.floor(Math.log10(max))); return [1, 2, 2.5, 5, 10].find(k => k * p >= max) * p; })();
+  const nice = niceUp(max);
   const x = d => L + (W - L - R) * dayDiff(t0, d) / span, y = v => T + (H - T - B) * (1 - v / nice);
   const path = k => pts.map((p, i) => `${i ? 'L' : 'M'}${x(p.d).toFixed(1)},${y(p[k]).toFixed(1)}`).join('');
   const mark = (d, v, c) => d && d <= hz ? `<circle cx="${x(d).toFixed(1)}" cy="${y(v).toFixed(1)}" r="5" fill="${c}"/>` : '';
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Debt going down and the emergency fund growing">
-    ${[0, nice / 2, nice].map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="${C.rule}"/><text x="${L - 8}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end" font-size="11" fill="${C.muted}" font-family="IBM Plex Mono, monospace">${esc(money(Math.round(v)).replace('.00', ''))}</text>`).join('')}
+    ${yGrid([0, nice / 2, nice], y, L, W, R, {C, dx: 8})}
     <path d="${path('debt')}" fill="none" stroke="${C.debt}" stroke-width="2.6" stroke-linejoin="round"/>
     <path d="${path('ef')}" fill="none" stroke="${C.ef}" stroke-width="2.6" stroke-linejoin="round"/>
     ${mark(sim.debtFree, 0, C.debt)}${mark(sim.fullAt, sim.T.full, C.ef)}${mark(sim.starterAt, sim.T.starter, C.ef)}
-    <text x="${L}" y="${H - 8}" font-size="11" fill="${C.muted}" font-family="IBM Plex Mono, monospace">${esc(dshort(t0))}</text>
-    <text x="${W - R}" y="${H - 8}" text-anchor="end" font-size="11" fill="${C.muted}" font-family="IBM Plex Mono, monospace">${esc(fMYL.format(pts[pts.length - 1].d))}</text>
+    ${monoText(L, H - 8, esc(dshort(t0)), C.muted)}${monoText(W - R, H - 8, esc(fMYL.format(pts[pts.length - 1].d)), C.muted, {anchor: 'end'})}
   </svg>`;
 }
 const planKey = C => `<div class="clegend" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))"><span><i class="sw" style="--c:${C.debt}"></i>Everything owed</span><span><i class="sw" style="--c:${C.ef}"></i>Emergency fund</span></div>`;
@@ -3433,7 +3421,7 @@ function planSettingsPanel(){
       ${inp('futureIncomeThiago', 'Thiago’s weekly pay when back at work (€)', 'Optional, after tax. For the €1M road', '')}
       ${inp('workInvestShare', 'Share of that extra pay to invest (%)', 'Default 50', '50')}
       <div class="fld"><label for="f_plan_roryPay">Rory’s pension is paid</label><select id="f_plan_roryPay" data-f="plan.roryPay"${ro ? ' disabled' : ''}>${[['', 'Not set'], ['own', 'From his own account'], ['payroll', 'Through payroll']].map(([k, l]) => `<option value="${k}"${(v.roryPay || '') === k ? ' selected' : ''}>${l}</option>`).join('')}</select></div></div>
-    ${S.err && S.tab === 'settings' ? `<p class="err">${esc(S.err)}</p>` : ''}
+    ${errLine(S.tab === 'settings')}
     ${ro ? '' : `<div class="actions"><button class="btn strong" data-act="planSave">Save plan settings</button>${S.f.plan ? '<button class="btn" data-act="planCancel">Discard changes</button>' : ''}</div>`}</section>`;
   return setPanel;
 }
@@ -3523,7 +3511,7 @@ ${['thiago', 'rory'].map(w => { const W = WHO_INC[w], f = FREQ_PAY[v[W.freq]] ? 
       <div class="fld"><label for="f_set_startedOn">System start date <small>The streak counts from here</small></label><input id="f_set_startedOn" type="date" data-f="set.startedOn" value="${esc(v.startedOn ?? '')}"${ro ? ' disabled' : ''}></div>
       <div class="fld wide"><label for="f_set_reasons">Why we’re doing this <small>One reason per line. They appear in the daily shield.</small></label><textarea id="f_set_reasons" data-f="set.reasons" placeholder="So Rory can trust the numbers again.&#10;So the card reaches €0 and stays there."${ro ? ' disabled' : ''}>${esc(v.reasons ?? '')}</textarea></div>
     </div>
-    ${S.err ? `<p class="err">${esc(S.err)}</p>` : ''}
+    ${errLine()}
     ${ro ? '' : `<div class="actions"><button class="btn strong" data-act="setSave">Save setup</button>${S.f.set ? '<button class="btn" data-act="setCancel">Discard changes</button>' : ''}</div>`}
   </section></div>`;
 }
@@ -3540,7 +3528,7 @@ function unexplainedForm(){
   const f = S.f.unk || {};
   return `<details${f.amount ? ' open' : ''}><summary>Log money we can’t explain</summary><div class="formbox" style="margin-top:8px"><p class="mut" style="font-size:.9rem">When money is missing and nobody remembers what it was. It shows in Rory’s report as “couldn’t explain”, so the numbers match the bank again from here on.</p>
     <div class="form">${field('unk', 'amount', 'Amount (€)', {money: true, ph: '13.20'})}${field('unk', 'date', 'Date', {type: 'date'})}${field('unk', 'paidFrom', 'Missing from', {select: [['joint', 'Joint account'], ['card', 'AIB credit card']]})}${field('unk', 'note', 'Anything you remember', {ph: 'Maybe a shop at Londis'})}</div>
-    ${S.err && S.errAt === 'unk' ? `<p class="err">${esc(S.err)}</p>` : ''}<div class="actions"><button class="btn strong" data-act="unkSave">Log as unexplained</button></div></div></details>`;
+    ${formEnd(S.errAt === 'unk', 'unkSave', 'Log as unexplained')}</div></details>`;
 }
 async function unkSave(prefill){
   const f = prefill || S.f.unk || {}; S.errAt = 'unk';
@@ -3637,7 +3625,7 @@ function jointNow(){   // the Joint account right now, less what this week's tra
     if (x.amount == null || tr[x.id]) continue;
     if (STEP_IN[x.id]) pin += x.amount; else if (x.fc === 'joint') pout += x.amount;
   }
-  for (const x of jointOut(addDays(t, 1), we)) pout += x.amt;
+  for (const x of accOut('joint', addDays(t, 1), we)) pout += x.amt;
   return {v: Math.round(Math.min(s0.v, s0.v + pin - pout) * 100) / 100, now: s0.v, pin, pout, pending: pin > .005 || pout > .005, when: cardPayday(ws)};
 }
 function jointShow(ws){   // the Joint tile: what is really there to use now, never the week's plan before the pays have landed and the transfers have gone
@@ -3731,22 +3719,16 @@ function confirmActs(it){
 }
 function stepForm(wsI, x){
   const key = `${wsI}.${x.id}`;
-  return `<div class="form"><div class="fld"><label for="f_amt_${wsI}_${esc(x.id)}">Amount really sent (€)</label><input id="f_amt_${wsI}_${esc(x.id)}" data-f="amt.${key}" inputmode="decimal" placeholder="${esc(num(x.amount).toFixed(2))}" value="${esc((S.f.amt || {})[key] ?? '')}"></div></div>
+  return `<div class="form">${field('amt', key, 'Amount really sent (€)', {money: true, ph: num(x.amount).toFixed(2)})}</div>
     <div class="actions"><button class="btn strong" data-act="stepAmt" data-w="${wsI}" data-id="${esc(x.id)}">Save this amount</button></div>
     <p class="mut" style="font-size:.85rem">The Joint account, free money, the Vaults, the money check and Rory’s report all use the real amount.</p>`;
 }
 function payForm(it){
-  const b = it.b, k = ppK(b.id, iso(it.d)), v = S.f.pp || {}, val = x => esc(v[`${k}_${x}`] ?? ''), abroad = b.account === 'nubank';
-  const dflt = abroad ? today() : it.on;
+  const b = it.b, k = ppK(b.id, iso(it.d)), v = S.f.pp || {}, abroad = b.account === 'nubank';
   return `<div class="stack" style="gap:10px">
-    <div class="form">
-      <div class="fld"><label for="f_pp_${k}_amount">${abroad ? 'Euros sent (€) <small>Wise fee included</small>' : b.variable ? 'Amount on the bill (€)' : 'Amount really paid (€)'}</label><input id="f_pp_${k}_amount" data-f="pp.${k}_amount" inputmode="decimal" placeholder="${esc(it.amount.toFixed(2))}" value="${val('amount')}"></div>
-      <div class="fld"><label for="f_pp_${k}_date">Date it was paid</label><input id="f_pp_${k}_date" type="date" data-f="pp.${k}_date" value="${val('date') || iso(dflt)}"></div>
-      ${abroad ? `<div class="fld"><label for="f_pp_${k}_fee">Wise fee (€)</label><input id="f_pp_${k}_fee" data-f="pp.${k}_fee" inputmode="decimal" placeholder="1.20" value="${val('fee')}"></div><div class="fld"><label for="f_pp_${k}_brl">Reais received (R$)</label><input id="f_pp_${k}_brl" data-f="pp.${k}_brl" inputmode="decimal" placeholder="${esc(String(b.brlAmount || ''))}" value="${val('brl')}"></div>` : ''}
-    </div>
+    <div class="form">${field('pp', `${k}_amount`, abroad ? 'Euros sent (€)' : b.variable ? 'Amount on the bill (€)' : 'Amount really paid (€)', {money: true, ph: it.amount.toFixed(2), hint: abroad ? 'Wise fee included' : ''})}${field('pp', `${k}_date`, 'Date it was paid', {type: 'date', dflt: iso(abroad ? today() : it.on)})}${abroad ? `${field('pp', `${k}_fee`, 'Wise fee (€)', {money: true, ph: '1.20'})}${field('pp', `${k}_brl`, 'Reais received (R$)', {money: true, ph: String(b.brlAmount || '')})}` : ''}</div>
     ${b.freq === 'instal' ? `<p class="mut" style="font-size:.88rem">Payment ${(instAt(b, it.d) || {}).k || '?'} of ${(instAt(b, it.d) || {}).n || '?'}. To change the total or the number of payments, edit the bill in Money → Bills.</p>` : !b.variable ? `<label class="chk"><input type="checkbox" data-f="pp.${k}_upd"${v[`${k}_upd`] ? ' checked' : ''}> From now on, this bill is this amount</label>` : '<p class="mut" style="font-size:.88rem">The estimate for the next one updates itself from the real bills.</p>'}
-    ${S.err && S.errAt === 'pp' + k ? `<p class="err">${esc(S.err)}</p>` : ''}
-    <div class="actions"><button class="btn strong" data-act="ppSave" data-k="${esc(it.key)}">${abroad ? 'Log the transfer' : 'Save this amount'}</button></div></div>`;
+    ${formEnd(S.errAt === 'pp' + k, 'ppSave', abroad ? 'Log the transfer' : 'Save this amount', ` data-k="${esc(it.key)}"`)}</div>`;
 }
 async function ppSave(key, quick){
   const {id, due} = ppParse(key), b = S.bills.find(x => x.id === id); if (!b) return;
@@ -3814,12 +3796,12 @@ function weekAvgs(){
   return {hist, n: base.length, partial: !done.length, spend: avg('spend'), bills: avg('bills'), card: avg('card'), cats};
 }
 function weekColsSVG(hist, C){
-  const W = window.innerWidth < 600 ? 360 : 680, H = 210, L = 50, R = 8, T = 16, B = 28, n = hist.length, slot = (W - L - R) / Math.max(1, n), bw = Math.min(18, slot / 4);
+  const W = chartW(680), H = 210, L = 50, R = 8, T = 16, B = 28, n = hist.length, slot = (W - L - R) / Math.max(1, n), bw = Math.min(18, slot / 4);
   const keys = [['spend', C.s1], ['bills', C.s2], ['card', C.s3]], max = Math.max(1, ...hist.flatMap(h => keys.map(([k]) => h[k])));
   const hi = niceUp(max), y = v => T + (H - T - B) * (1 - v / hi);
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Purchases, bills and card payments per week">
-    ${[0, hi / 2, hi].map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="${C.rule}"/><text x="${L - 8}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end" font-size="12" fill="${C.muted}" font-family="IBM Plex Mono, monospace">${esc(shortMoney(v))}</text>`).join('')}
-    ${hist.map((h, i) => { const cx = L + slot * i + slot / 2; return `<g><title>${esc(weekLabel(h.ws))}: purchases ${esc(money(h.spend))}, bills and debts ${esc(money(h.bills))}, card ${esc(money(h.card))}</title>${keys.map(([k, c], j) => { const x0 = cx - 1.5 * bw - 2 + j * (bw + 2), v = h[k], top = y(v); return v > 0 ? `<rect x="${x0.toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1, y(0) - top).toFixed(1)}" rx="3" fill="${c}"${h.cur ? ' fill-opacity=".6"' : ''}/>` : ''; }).join('')}<text x="${cx.toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="${C.muted}" font-family="IBM Plex Mono, monospace">${esc(dshort(h.ws))}</text></g>`; }).join('')}
+    ${yGrid([0, hi / 2, hi], y, L, W, R, {C, dx: 8, fs: 12, fmt: shortMoney})}
+    ${hist.map((h, i) => { const cx = L + slot * i + slot / 2; return `<g><title>${esc(weekLabel(h.ws))}: purchases ${esc(money(h.spend))}, bills and debts ${esc(money(h.bills))}, card ${esc(money(h.card))}</title>${keys.map(([k, c], j) => { const x0 = cx - 1.5 * bw - 2 + j * (bw + 2), v = h[k], top = y(v); return v > 0 ? `<rect x="${x0.toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1, y(0) - top).toFixed(1)}" rx="3" fill="${c}"${h.cur ? ' fill-opacity=".6"' : ''}/>` : ''; }).join('')}${monoText(cx.toFixed(1), H - 8, esc(dshort(h.ws)), C.muted, {anchor: 'middle'})}</g>`; }).join('')}
   </svg>`;
 }
 function loggedThisWeek(){
@@ -3842,7 +3824,7 @@ function vPay(){
   const extraOpen = S.payOpen === 'extra';
   const extra = S.canWrite ? `<details class="payextra"${extraOpen || S.payOpen === 'early' ? ' open' : ''}><summary>Paid something that isn’t listed here?</summary>
       <div class="actions" style="margin-top:8px"><button class="btn small${extraOpen ? ' on' : ''}" data-act="payOpen" data-k="extra">Extra payment to the card</button><button class="btn small" data-act="todayOpen" data-v="log">It was a purchase</button><button class="btn small" data-act="goMove">I moved money between accounts</button><button class="btn small${S.payOpen === 'early' ? ' on' : ''}" data-act="payOpen" data-k="early">A bill, paid early</button></div>${S.payOpen === 'early' ? payEarlyForm() : ''}
-      ${extraOpen ? `<div class="payform"><div class="form">${field('pay', 'amount', 'Extra payment to the card (€)', {money: true, ph: '400'})}${field('pay', 'date', 'Date', {type: 'date'})}${field('pay', 'note', 'What was it', {ph: 'Money from a sale'})}</div>${S.err && !String(S.errAt || '').startsWith('pp') ? `<p class="err">${esc(S.err)}</p>` : ''}<div class="actions"><button class="btn strong" data-act="cardPay" data-type="payment">Log extra payment</button></div></div>` : ''}</details>` : '';
+      ${extraOpen ? `<div class="payform"><div class="form">${field('pay', 'amount', 'Extra payment to the card (€)', {money: true, ph: '400'})}${field('pay', 'date', 'Date', {type: 'date'})}${field('pay', 'note', 'What was it', {ph: 'Money from a sale'})}</div>${errLine(!String(S.errAt || '').startsWith('pp'))}<div class="actions"><button class="btn strong" data-act="cardPay" data-type="payment">Log extra payment</button></div></div>` : ''}</details>` : '';
   const A = weekAvgs(), cur = A.hist[A.hist.length - 1] || {spend: 0, bills: 0, card: 0}, vs = (now, avg) => A.partial ? '' : avg > 0 ? `<span class="${now > avg * 1.1 ? 'neg' : now < avg * .9 ? 'pos' : 'mut'}">${now > avg ? '▲' : '▼'} ${money(Math.abs(now - avg)).replace('.00', '')} vs average</span>` : '<span class="mut">no average yet</span>';
   const avgPanel = `<section class="panel"><header><h2>Our weekly averages</h2><span class="mut" style="font-size:.85rem">${A.partial ? 'From this week only. Averages settle after a few weeks.' : `Average of the last ${A.n} full week${A.n === 1 ? '' : 's'}`}</span></header>
     <div class="gtiles three">
@@ -3945,8 +3927,7 @@ function varPanel(){
         <div class="form">${field('vbf', `${b.id}_amount`, 'Amount on the bill (€)', {money: true, ph: String(Math.round(num(b.amount)))})}${field('vbf', `${b.id}_date`, 'Date it is (or was) taken', {type: 'date'})}</div>
         ${(() => { const amt = num((S.f.vbf || {})[`${b.id}_amount`]), dt = pd((S.f.vbf || {})[`${b.id}_date`]); if (!(amt > 0) || !dt || !vs || dt < addDays(today(), -20)) return ''; const held = num(b.amount);
           return `<p class="tip">${amt <= held ? `The Vault will have about ${money(held)}: move <b>${money(amt)}</b> to the Bills Pocket the day before, and <b>${money(held - amt)}</b> stays in the Vault for the next one.` : `That’s <b>${money(amt - held)}</b> more than the Vault will have. Move the whole Vault (about ${money(held)}) to the Bills Pocket the day before; its buffer covers the rest. The weekly Vault amount goes up to match.`}</p>`; })()}
-        ${S.err && S.errAt === 'vb' + b.id ? `<p class="err">${esc(S.err)}</p>` : ''}
-        <div class="actions"><button class="btn strong" data-act="vbLog" data-id="${esc(b.id)}">Log this bill</button></div>
+        ${formEnd(S.errAt === 'vb' + b.id, 'vbLog', 'Log this bill', ` data-id="${esc(b.id)}"`)}
         ${h.length ? `<details><summary>Every bill logged (${h.length})</summary><div class="ledger">${h.slice().reverse().map(x => `<div class="lrow"><span class="d">${dshort(pd(x.date))}</span><span class="n">${money(x.amount)} <small>${new Intl.DateTimeFormat('en-IE', {year: 'numeric'}).format(pd(x.date))}</small></span><span class="a"><button class="btn small danger" data-act="vbDel" data-id="${esc(b.id)}" data-d="${esc(x.date)}">Delete</button></span></div>`).join('')}</div></details>` : ''}</div>` : ''}
     </section>`;
   }).join('');
@@ -4146,9 +4127,9 @@ function enReadCheck(upTo, kwh){   // the app counts from the 1st of the month: 
 function enWeeksSVG(daily, C){   // kWh per full week, the last 10 weeks the readings cover
   const wk = {}, n = {}; for (const [k, v] of Object.entries(daily)){ const w = iso(weekStartOf(pd(k))); wk[w] = (wk[w] || 0) + v; n[w] = (n[w] || 0) + 1; }
   const list = Object.entries(wk).filter(([w]) => n[w] === 7).sort().slice(-10); if (list.length < 2 || EN().readings.length < 3) return '';   // one reading spread over a month would draw flat weeks that say nothing
-  const W = window.innerWidth < 600 ? 360 : 640, H = 170, L = 40, R = 8, T = 14, Bm = 24, slot = (W - L - R) / list.length, bw = Math.min(26, slot * .6), max = Math.max(...list.map(x => x[1])) * 1.15 || 1, y = v => T + (H - T - Bm) * (1 - v / max);
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Electricity used each week">${[0, max / 2].map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="${C.rule}"/><text x="${L - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end" font-size="11" fill="${C.muted}" font-family="IBM Plex Mono, monospace">${Math.round(v)}</text>`).join('')}
-    ${list.map(([w, v], i) => { const cx = L + slot * i + slot / 2; return `<g><title>Week of ${esc(dshort(pd(w)))}: ${v.toFixed(1)} kWh</title><rect x="${(cx - bw / 2).toFixed(1)}" y="${y(v).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0, y(0) - y(v)).toFixed(1)}" rx="3" fill="${C.s2}"/><text x="${cx.toFixed(1)}" y="${H - 7}" text-anchor="middle" font-size="10.5" fill="${C.muted}" font-family="IBM Plex Mono, monospace">${esc(dshort(pd(w)))}</text></g>`; }).join('')}</svg>`;
+  const W = chartW(640), H = 170, L = 40, R = 8, T = 14, Bm = 24, slot = (W - L - R) / list.length, bw = Math.min(26, slot * .6), max = Math.max(...list.map(x => x[1])) * 1.15 || 1, y = v => T + (H - T - Bm) * (1 - v / max);
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Electricity used each week">${yGrid([0, max / 2], y, L, W, R, {C, fmt: Math.round})}
+    ${list.map(([w, v], i) => { const cx = L + slot * i + slot / 2; return `<g><title>Week of ${esc(dshort(pd(w)))}: ${v.toFixed(1)} kWh</title><rect x="${(cx - bw / 2).toFixed(1)}" y="${y(v).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0, y(0) - y(v)).toFixed(1)}" rx="3" fill="${C.s2}"/>${monoText(cx.toFixed(1), H - 7, esc(dshort(pd(w))), C.muted, {anchor: 'middle', fs: 10.5})}</g>`; }).join('')}</svg>`;
 }
 function vEnergy(){
   const F = enForecast(), E = F.E, T = E.tariff, b = enBill(), C = RC_LIVE, t = today(), TG = enTarget();
@@ -4185,7 +4166,7 @@ function vEnergy(){
   const form = S.canWrite ? `<section class="panel"><header><h2>This week’s reading</h2><span class="mut" style="font-size:.85rem">Once a week · Energia app → Usage → “So far”</span></header>
     ${(() => { const lm = addDays(enMonthStart(t), -1); return `<div class="fld"><span class="label">Which month does the app show? <small>The title: “Your consumption in …”</small></span>${seg('en', 'month', [['this', enMonth(t)], ['last', enMonth(lm)]])}</div>`; })()}
     <div class="form">${(S.f.en || {}).month === 'last' ? '' : field('en', 'upTo', 'So far up to', {type: 'date', hint: 'The last day in “So far” (1–4 Nov → 4 Nov)'})}${field('en', 'kwh', `kWh so far in ${enMonth((S.f.en || {}).month === 'last' ? addDays(enMonthStart(t), -1) : t)}`, {money: true, ph: '29.01'})}${field('en', 'eur', '€ so far (optional)', {money: true, ph: '12.86'})}</div>
-    ${S.err && S.errAt === 'en' ? `<p class="err">${esc(S.err)}</p>` : ''}<div class="actions"><button class="btn strong" data-act="enRead">Save the reading</button></div>
+    ${formEnd(S.errAt === 'en', 'enRead', 'Save the reading')}
     <p class="mut" style="font-size:.85rem">The app shows one month at a time and counts from the 1st, so each new number replaces the last one for that month: the system only counts what was added since (shown under Readings). In the first days of a month the app may still show last month: choose that month above, and it counts as the month’s final total. The Sunday money check has the same box.</p></section>` : '';
   const daily = enDaily(), chart = enWeeksSVG(daily, C), mix = enMix();
   const use = `<section class="panel"><header><h2>How we use it</h2></header>
@@ -4201,7 +4182,7 @@ function vEnergy(){
   const reads = F.readings.length ? `<section class="panel"><header><h2>Readings</h2><span class="mut" style="font-size:.85rem">Each new number replaces the last one for its month; only what it adds counts</span></header><div class="ledger">${enReadingRows().slice(0, 14).map(x => `<div class="lrow"><span class="d">${dshort(pd(x.r.upTo))}</span><span class="n">${num(x.r.kwh)} kWh so far in ${esc(enMonth(pd(x.r.upTo)))}${x.final ? ' (final)' : ''}<br><small>${x.first ? `+${x.add.toFixed(1)} kWh since 1 ${esc(enMonth(pd(x.r.upTo)).slice(0, 3))}` : `+${x.add.toFixed(1)} kWh since the last reading`}${x.perDay != null ? ` · ${x.n} day${x.n > 1 ? 's' : ''}, ${x.perDay.toFixed(1)} a day` : ''}${x.r.eur ? ` · ${money(x.r.eur)} in the app` : ''}</small></span><span class="a">${S.canWrite ? `<button class="btn small danger" data-act="enDelRead" data-d="${esc(x.r.upTo)}">Delete</button>` : ''}</span></div>`).join('')}</div></section>` : '';
   const billForm = S.canWrite ? `<section class="panel"><header><h2>When the bill arrives</h2></header><p class="mut" style="font-size:.9rem">Copy it from page 2 of the bill (“Your usage details”). The real bill sets the amount and date in Pay, teaches the system our day, night and peak split, and starts the next period.</p>
     <div class="form">${field('enb', 'from', 'Period from', {type: 'date'})}${field('enb', 'to', 'Period to', {type: 'date'})}${field('enb', 'day', 'Day units (kWh)', {money: true, ph: '254.502'})}${field('enb', 'night', 'Night units (kWh)', {money: true, ph: '106.146'})}${field('enb', 'peak', 'Peak units (kWh)', {money: true, ph: '50.506'})}${field('enb', 'total', 'Total of the bill (€)', {money: true, ph: '168.75'})}${field('enb', 'billDate', 'Date of the bill', {type: 'date'})}${field('enb', 'takeOn', 'Taken on', {type: 'date', hint: 'The direct debit date on the bill'})}</div>
-    ${S.err && S.errAt === 'enb' ? `<p class="err">${esc(S.err)}</p>` : ''}<div class="actions"><button class="btn strong" data-act="enBill">Save the bill</button></div></section>` : '';
+    ${formEnd(S.errAt === 'enb', 'enBill', 'Save the bill')}</section>` : '';
   const tf = S.f.ent || T, mode = (S.f.enm || {}).mode || E.mode;
   const lastChk = F.last ? enCost(enUnits(F.last), num(F.last.days || dayDiff(pd(F.last.from), pd(F.last.to))), enBillMix(F.last)) : null;
   const tariff = `<section class="panel"><header><h2>Our tariff</h2><span class="mut" style="font-size:.85rem">From the bill; change it when Energia changes the prices</span></header>
@@ -4557,7 +4538,7 @@ function roryWaiting(){   // every question waiting for Rory's answer: a plan in
 function roryAskCard(){   // Rory's view, live: what Thiago is asking him, and (from his own account) his answer
   const list = roryWaiting();
   if (!list.length) return '';
-  const box = x => !S.canAnswer ? '' : `<div class="cmpans">${field('ans', x.ref, 'Your answer, in your words', {ph: x.kind === 'compare' ? 'OK, but only the Family plan' : 'Yes, it can wait a week'})}${S.err && S.errAt === 'ans' + x.ref ? `<p class="err">${esc(S.err)}</p>` : ''}<div class="actions"><button class="btn strong" data-act="roryAnswer" data-k="${x.kind}" data-id="${esc(x.ref)}" data-v="yes">Yes</button><button class="btn" data-act="roryAnswer" data-k="${x.kind}" data-id="${esc(x.ref)}" data-v="no">No</button></div></div>`;
+  const box = x => !S.canAnswer ? '' : `<div class="cmpans">${field('ans', x.ref, 'Your answer, in your words', {ph: x.kind === 'compare' ? 'OK, but only the Family plan' : 'Yes, it can wait a week'})}${errLine(S.errAt === 'ans' + x.ref)}<div class="actions"><button class="btn strong" data-act="roryAnswer" data-k="${x.kind}" data-id="${esc(x.ref)}" data-v="yes">Yes</button><button class="btn" data-act="roryAnswer" data-k="${x.kind}" data-id="${esc(x.ref)}" data-v="no">No</button></div></div>`;
   const row = x => { if (x.kind === 'wish'){ const vd = wishVerdict(x.w); return `<div class="brow"><span class="bi warn">?</span><span><b>${esc(x.title)}</b><small>${esc(WHO[x.w.who] || '')} · a want on the wishlist · ${esc(vd.v)}${x.w.note ? ` · ${esc(x.w.note)}` : ''}</small></span><i>${m0(x.w.price)}</i></div>${box(x)}`; }
     const r = x.D.row, use = cmpUseLine(x.E, r);
     return `<div class="brow"><span class="bi warn">?</span><span><b>${esc(x.title)}</b><small>${money(r.k.monthly)} a month · ${r.diff < -.005 ? `${money(-r.diff)} less than now` : r.diff > .005 ? `${money(r.diff)} more than now` : 'same as now'}${use ? ` · ${esc(use)}` : ''} · the page says: ${CMP_LABEL[r.st]}</small></span><i>${m0(r.k.monthly)}</i></div>${box(x)}`; };
@@ -4762,7 +4743,7 @@ function vCompare(){
     ${(() => { const svc = cmpServices(c); if (!svc.length) return `<p class="mut" style="font-size:.88rem">Write what each ${kind === 'energy' ? 'offer' : 'plan'} includes (commas between): then rate how much we use each thing.</p>`;
       return `<h3>How much do we use each one?</h3><p class="mut" style="font-size:.88rem">Be honest: a bundle is only worth it for what we really use. “We need it”: a plan without it is a no. “Never”: paying more for it is a no. Rory reads this.</p>
       ${svc.map((x, i) => { const lvl = (f.use || {})[x.key]; return `<div class="cmpuse"><div class="cmph"><b>${esc(x.name)}</b>${x.sizes.length ? `<span class="mut">${esc(x.sizes.map(z => z.size).join(' · '))}</span>` : ''}</div><div class="seg" role="group">${Object.entries(CMP_USE).map(([k2, l]) => `<button type="button" data-act="cmpUse" data-k="${esc(x.key)}" data-v="${k2}" aria-pressed="${lvl === k2}">${l}</button>`).join('')}</div>${x.sizes.length > 1 && lvl && lvl !== 'never' ? `<div class="fld"><label for="f_cmpmin_${i}">We need at least</label><select id="f_cmpmin_${i}" data-f="cmpmin.${esc(x.key)}"><option value="">Any size</option>${x.sizes.map(z => `<option value="${z.gb}"${String((S.f.cmpmin || {})[x.key]) === String(z.gb) ? ' selected' : ''}>${esc(z.size)}</option>`).join('')}</select></div>` : ''}</div>`; }).join('')}`; })()}
-    ${S.err ? `<p class="err">${esc(S.err)}</p>` : ''}
+    ${errLine()}
     ${S.canWrite ? `<div class="actions"><button class="btn strong" data-act="cmpSave">Save</button>${f._id ? `<button class="btn danger" data-act="cmpDel" data-id="${esc(f._id)}">${S.confirmCmpD === f._id ? 'Tap again: delete it' : 'Delete comparison'}</button>` : ''}</div>${f._id && S.confirmCmpD === f._id ? `<p class="cmpdelnote">${esc(cmpDelNote(S.compare.find(x => x.id === f._id) || {}))}</p>` : ''}` : ''}</section>`;
   const res = !E ? '' : `<section class="panel" id="cmpResult"><header><h2>Which one?</h2><span class="mut" style="font-size:.85rem">Tested against our money today</span></header>
     <div class="verdict ${E.rec.st}"><h3>${CMP_ICON[E.rec.st]} ${esc(E.rec.h)}</h3>${E.rec.t ? `<p>${esc(E.rec.t)}</p>` : ''}${c.applied ? `<p>Applied on ${dlong(pd(c.applied.on))}: ${esc(((c.plans || []).find(p => p.id === c.chosen) || {}).name || '')}.</p>` : ''}</div>
@@ -5108,8 +5089,7 @@ function prepAgreeBox(){
     <p style="font-size:.92rem">The plan: the kit below for the two of us, bought one step at a time from money that’s really free; ${money(cp.target)} cash at home in small notes, ${money(cp.step)} every ${cp.every} weeks from ${cp.from === 'joint' ? 'the Joint account' : 'the emergency fund'} (it stays emergency money: rule 8); big items (Starlink, power station) through the wishlist and Compare.</p>
     <div class="fld"><span class="label">Did you decide this with Rory?</span>${seg('ppag', 'ag', [['yes', 'Yes, together'], ['no', 'Not yet']])}</div>
     <div class="form">${field('ppag', 'said', 'What Rory said (optional)', {wide: true, ph: 'Fine by me, small steps'})}</div>
-    ${S.err && S.errAt === 'ppag' ? `<p class="err">${esc(S.err)}</p>` : ''}
-    <div class="actions"><button class="btn strong" data-act="prepAgree">Save</button></div></details>`;
+    ${formEnd(S.errAt === 'ppag', 'prepAgree', 'Save')}</details>`;
 }
 function prepStageHTML(n){
   const s = prepStage(n), later = prepItems().filter(x => num(x.stage) === n && x.status === 'later');
@@ -5129,7 +5109,7 @@ function prepBuyForm(x){
   const k = 'ppb_' + x.id, f = S.f[k] || (S.f[k] = {amount: num(x.cost) ? String(num(x.cost).toFixed(2)) : '', paidFrom: 'joint', date: iso(today()), exp: x.life ? iso(addDays(today(), Math.round(num(x.life) * 30.4))) : ''});
   return `<div class="formbox"><div class="form">${field(k, 'amount', 'What it cost (€)', {money: true})}${field(k, 'date', 'Date', {type: 'date'})}${field(k, 'paidFrom', 'Paid from', {select: [['joint', 'Joint account'], ['card', 'AIB credit card'], ['thiago', 'Thiago’s personal account'], ['rory', 'Rory’s personal account']]})}${x.life ? field(k, 'exp', 'Use by', {type: 'date', hint: 'the earliest date on the pack'}) : ''}</div>
     ${f.paidFrom === 'card' ? '<p class="mvnote">Rule 3 is about wants: this is a need from the plan, but it still adds to the card.</p>' : ''}
-    ${S.err && S.errAt === k ? `<p class="err">${esc(S.err)}</p>` : ''}
+    ${errLine(S.errAt === k)}
     <div class="actions"><button class="btn strong" data-act="prepBuySave" data-id="${esc(x.id)}">Log the purchase</button><button class="btn" data-act="prepBuy" data-id="">Cancel</button></div>
     <p class="mut" style="font-size:.85rem">It’s logged as a need (Home${x.cat === 'meds' ? ' / Health' : ''}), not as the shop, so the weekly shop isn’t learned higher.</p></div>`;
 }
@@ -5148,7 +5128,7 @@ function prepMedHTML(){
   const L = prepMeds(), f = S.f.ppmed || (S.f.ppmed = {who: ''});
   return `<section class="panel"><header><h2>Regular medicines</h2><span class="mut" style="font-size:.85rem">Keep at least 7 days spare</span></header>
     ${L.length ? `<div class="ledger">${L.map(x => { const have = num(x.have), low = have < num(x.qty); return `<div class="lrow prow"><span class="d"><span class="dot ${low ? 'warn' : 'ok'}"></span> ${have} days spare</span><span class="n"><b>${esc(x.name)}</b><small>${esc(WHO[x.who] || '')}${low ? ` · ask for the repeat prescription: keep ${num(x.qty)} days` : ''}</small></span>${S.canWrite ? `<span class="pbtns"><button class="linkbtn" data-act="prepMedDays" data-id="${esc(x.id)}">Update</button><button class="linkbtn" data-act="prepDrop" data-id="${esc(x.id)}">${S.confirmPrep === 'd' + x.id ? 'Tap again' : 'Remove'}</button></span>` : ''}</div>${S.prepMed === x.id ? `<div class="formbox"><div class="form">${field('ppmd', 'days', 'Days of spare supply now', {money: true})}</div><div class="actions"><button class="btn strong" data-act="prepMedDaysSave" data-id="${esc(x.id)}">Save</button></div></div>` : ''}`; }).join('')}</div>` : '<p class="mut">None listed. Add any medicine either of us takes every day, so the kit always has a week spare.</p>'}
-    ${S.canWrite ? `<details><summary class="mut" style="cursor:pointer;font-size:.9rem">Add a medicine</summary><div class="form">${field('ppmed', 'name', 'Medicine', {ph: 'Name and strength'})}${field('ppmed', 'days', 'Days of spare supply now', {money: true, ph: '3'})}</div><div class="fld"><span class="label">Whose?</span>${seg('ppmed', 'who', [['thiago', 'Thiago'], ['rory', 'Rory']])}</div>${S.err && S.errAt === 'ppmed' ? `<p class="err">${esc(S.err)}</p>` : ''}<div class="actions"><button class="btn strong" data-act="prepMedAdd">Add</button></div></details>` : ''}
+    ${S.canWrite ? `<details><summary class="mut" style="cursor:pointer;font-size:.9rem">Add a medicine</summary><div class="form">${field('ppmed', 'name', 'Medicine', {ph: 'Name and strength'})}${field('ppmed', 'days', 'Days of spare supply now', {money: true, ph: '3'})}</div><div class="fld"><span class="label">Whose?</span>${seg('ppmed', 'who', [['thiago', 'Thiago'], ['rory', 'Rory']])}</div>${formEnd(S.errAt === 'ppmed', 'prepMedAdd', 'Add')}</details>` : ''}
     <p class="mut" style="font-size:.85rem">Only the name and the days spare are kept, nothing about why. A copy of each prescription goes in the documents bag.</p></section>`;
 }
 const PREP_PLAN = [['contacts', 'Emergency contacts', 'GP, pharmacy, a neighbour, family: names and numbers'], ['meet', 'Where we meet if we’re apart', 'e.g. the church car park; a second place in town'], ['brazil', 'Family in Brazil', 'Who to tell we’re OK, and how (WhatsApp, SMS)'], ['mprn', 'MPRN and GPRN', 'From the electricity and gas bills'], ['shutoff', 'Where to switch off', 'Fuse board, gas valve, water stopcock'], ['notes', 'Anything else', 'Pets, spare keys, who checks on whom']];
@@ -5272,8 +5252,7 @@ function payEarlyForm(){
   const it = L.find(x => x.key === f.key);
   return `<div class="payform"><div class="form">${field('pe', 'key', 'Which bill', {select: L.map(x => [x.key, `${x.name} · ${money(x.amount)} · due ${dshort(x.d)}`])})}${field('pe', 'date', 'Paid on', {type: 'date'})}${field('pe', 'amount', 'Amount paid (€)', {money: true, ph: num(it.amount).toFixed(2)})}</div>
     <p class="mvnote ok">It counts as paid from that day: Pay won’t ask for it on ${dshort(it.d)}, the Bills Pocket goes down on the day you paid, and the money check follows. If the direct debit is still on, it should take nothing (check the next bill).</p>
-    ${S.err && S.errAt === 'pe' ? `<p class="err">${esc(S.err)}</p>` : ''}
-    <div class="actions"><button class="btn strong" data-act="payEarly">Log it as paid</button></div></div>`;
+    ${formEnd(S.errAt === 'pe', 'payEarly', 'Log it as paid')}</div>`;
 }
 async function payEarly(){
   const f = S.f.pe || {}, it = payEarlyList().find(x => x.key === f.key); S.errAt = 'pe';
@@ -5321,8 +5300,7 @@ function cardIntForm(){
   const done = cardIntLog().slice().reverse().slice(0, 3);
   return `<div class="formbox"><h3>Interest from the statement</h3><p class="mut" style="font-size:.9rem">AIB adds the month’s interest on the statement date. Type the “Interest Charged” amount from page 1 of the statement (0 if there was none). The real amount replaces the estimate everywhere.</p>
     <div class="form">${field('ci', 'stmt', 'Statement of', {select: L.map(c => [iso(c.S), `${dlong(c.S)}${cardIntFor(iso(c.S)) ? ` · logged ${money(cardIntFor(iso(c.S)).amount)}` : ''}`])})}${field('ci', 'amount', 'Interest charged (€)', {money: true, ph: '19.52'})}</div>
-    ${S.err && S.errAt === 'ci' ? `<p class="err">${esc(S.err)}</p>` : ''}
-    <div class="actions"><button class="btn strong" data-act="cardInt">Save the interest</button></div>
+    ${formEnd(S.errAt === 'ci', 'cardInt', 'Save the interest')}
     ${done.length ? `<div class="kv">${done.map(e => `<span>${dshort(pd(e.stmt))} statement</span><span>${money(e.amount)}</span>`).join('')}</div>` : ''}
     ${cardRateFromStmt() ? `<p class="mut" style="font-size:.85rem">Estimates for the next statements use what the last one really charged: about ${(cardRateY() * 100).toFixed(1)}% a year on the balance.</p>` : ''}</div>`;
 }
@@ -5393,15 +5371,15 @@ function cardIntMonths(){
   return list;
 }
 function cardIntChartSVG(list, C){
-  const W = window.innerWidth < 600 ? 360 : 640, H = 180, L = 46, R = 8, T = 22, B = 26, n = Math.max(list.length, 3), slot = (W - L - R) / n, bw = Math.min(40, slot * .55);
-  const max = Math.max(5, ...list.map(x => x.v || 0)), p = Math.pow(10, Math.floor(Math.log10(max))), hi = [1, 2, 2.5, 5, 10].find(k => k * p >= max) * p;
+  const W = chartW(640), H = 180, L = 46, R = 8, T = 22, B = 26, n = Math.max(list.length, 3), slot = (W - L - R) / n, bw = Math.min(40, slot * .55);
+  const hi = niceUp(Math.max(5, ...list.map(x => x.v || 0)));
   const y = v => T + (H - T - B) * (1 - v / hi), mo = d => new Intl.DateTimeFormat('en-IE', {month: 'short'}).format(d);
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Card interest charged on each statement">
-    ${[0, hi / 2, hi].map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="${v ? C.rule : C.muted}"/><text x="${L - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end" font-size="11.5" fill="${C.muted}" font-family="IBM Plex Mono, monospace">€${v % 1 ? v.toFixed(1) : v}</text>`).join('')}
-    ${list.map((m, k) => { const cx = L + slot * k + slot / 2, lab = `<text x="${cx.toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="11.5" fill="${C.muted}" font-family="IBM Plex Mono, monospace">${esc(mo(m.S))}${m.est ? '*' : ''}</text>`;
+    ${yGrid([0, hi / 2, hi], y, L, W, R, {C, stroke: v => v ? C.rule : C.muted, fs: 11.5, fmt: v => `€${v % 1 ? v.toFixed(1) : v}`})}
+    ${list.map((m, k) => { const cx = L + slot * k + slot / 2, lab = monoText(cx.toFixed(1), H - 8, `${esc(mo(m.S))}${m.est ? '*' : ''}`, C.muted, {anchor: 'middle', fs: 11.5});
       if (m.v == null) return `${lab}<text x="${cx.toFixed(1)}" y="${(y(0) - 6).toFixed(1)}" text-anchor="middle" font-size="10" fill="${C.muted}" font-family="IBM Plex Sans, sans-serif">not typed</text>`;
       const top = y(m.v), h = Math.max(1, y(0) - top);
-      return `<g><title>${esc(dlong(m.S))} statement: ${esc(money(m.v))}${m.est ? ' (estimate)' : ''}</title><rect x="${(cx - bw / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${C.bad}"${m.est ? ' fill-opacity=".45"' : ''}/><text x="${cx.toFixed(1)}" y="${(top - 5).toFixed(1)}" text-anchor="middle" font-size="11.5" fill="${C.ink}" font-family="IBM Plex Mono, monospace">${esc(money(m.v))}</text>${lab}</g>`; }).join('')}
+      return `<g><title>${esc(dlong(m.S))} statement: ${esc(money(m.v))}${m.est ? ' (estimate)' : ''}</title><rect x="${(cx - bw / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${C.bad}"${m.est ? ' fill-opacity=".45"' : ''}/>${monoText(cx.toFixed(1), (top - 5).toFixed(1), esc(money(m.v)), C.ink, {anchor: 'middle', fs: 11.5})}${lab}</g>`; }).join('')}
   </svg>`;
 }
 function cardIntPanel(){
@@ -5410,14 +5388,14 @@ function cardIntPanel(){
   const all = cardIntLog(), tot = all.reduce((a, e) => a + num(e.amount), 0), avg = all.length ? tot / all.length : 0;
   const ch = last && prev ? last.v - prev.v : null;
   return `<section class="panel"><header><h2>Card interest, month by month</h2></header>
-    <div class="chartwrap">${cardIntChartSVG(list, LIVE_C)}</div>
+    <div class="chartwrap">${cardIntChartSVG(list, RC_LIVE)}</div>
     <p class="mut" style="font-size:.85rem">Each bar is the interest on one AIB statement (the 4th of the month), as typed from the statement. * the next one, estimated from what the card owes now.</p>
     <div class="kv">${last ? `<span>Last statement (${dshort(last.S)})</span><span>${money(last.v)}${ch != null ? ` <small class="${ch > 0 ? 'neg' : 'pos'}">${ch > 0 ? '▲' : '▼'} ${money(Math.abs(ch))}</small>` : ''}</span>` : ''}${nx ? `<span>Next statement (${dshort(nx.S)}), estimate</span><span>about ${money(nx.v)}</span>` : ''}${all.length ? `<span>Since we started logging (${all.length} statement${all.length === 1 ? '' : 's'})</span><span>${money(tot)}</span><span>Average a month</span><span>${money(avg)}</span><span>At that pace, a year</span><span>about ${money(avg * 12)}</span>` : ''}</div>
     <p class="mut" style="font-size:.85rem">AIB charges its monthly rate (shown on page 1 of each statement) on each day’s balance, so the amount changes with what the card owed through the month. It only goes to €0 when the card is paid in full.</p></section>`;
 }
 
 /* ---------- system health: the page checks itself every time it opens; Claude runs the full check every Monday ---------- */
-const APP_VERSION = '2026.11.12-2';
+const APP_VERSION = '2026.11.12-3';
 function selfCheck(){   // cheap checks on the data, run on every open: things that don't fit, and the weekly tasks that should have run
   const key = `${S._rt}|${iso(today())}`; if (S._hc && S._hc.k === key) return S._hc.v;
   const items = [], t = today(), add = (st2, area, txt) => items.push({st: st2, area, t: txt});
@@ -5576,8 +5554,7 @@ function ntfBody(){
       ${kinds.some(([k]) => f[k] === 'evening') ? field('ntf', 'digestAt', 'Evening summary at', {type: 'time'}) : ''}
       <div class="fld"><span class="label">Quiet hours <small>What comes in them waits until they end</small></span>${seg('ntf', 'quiet', [['yes', 'Quiet hours'], ['no', 'None']])}</div>
       ${f.quiet === 'yes' ? `${field('ntf', 'qFrom', 'From', {type: 'time'})}${field('ntf', 'qTo', 'To', {type: 'time'})}` : ''}</div>
-    ${S.err && S.errAt === 'ntf' ? `<p class="err">${esc(S.err)}</p>` : ''}
-    <div class="actions"><button class="btn strong" data-act="ntfSave"${busy}>Save my choices</button></div>
+    ${formEnd(S.errAt === 'ntf', 'ntfSave', 'Save my choices', busy)}
     <p class="mut" style="font-size:.85rem">Your own choices, on your own account: nobody else sees or changes them. ${ntfRole() === 'viewer' ? 'The shop, cigarettes and drinks can come together in the evening, with the totals.' : 'Rory chooses his in his own app.'}</p>`;
 }
 function ntfPanel(){ return S.ntf ? `<section class="panel" id="ntfPanel"><header><h2>Notifications</h2><span class="mut" style="font-size:.85rem">On this phone</span></header>${ntfBody()}</section>` : ''; }
@@ -5745,17 +5722,17 @@ function sharedSeries(){ // past: money checks; future: the plan
   return {past, future};
 }
 function resultColsSVG(list, C){ // monthly result, above or below zero
-  const W = !C.pdf && window.innerWidth < 600 ? 360 : 640, H = 190, L = 52, R = 8, T = 20, B = 26, n = list.length, slot = (W - L - R) / n, bw = Math.min(36, slot * .55);
+  const W = chartW(640, C.pdf), H = 190, L = 52, R = 8, T = 20, B = 26, n = list.length, slot = (W - L - R) / n, bw = Math.min(36, slot * .55);
   const vals = list.map(x => x.v || 0);
   let hi = niceUp(Math.max(0, ...vals)), lo = -niceUp(-Math.min(0, ...vals)); if (hi === lo) hi = 100;
   const y = v => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Result of each month">
-    ${[lo, 0, hi].filter((v, i, a) => a.indexOf(v) === i).map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="${v === 0 ? C.muted : C.rule}"/><text x="${L - 8}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end" font-size="12" fill="${C.muted}" font-family="IBM Plex Mono, monospace">${esc(shortMoney(v))}</text>`).join('')}
-    ${list.map((m, i) => { const cx = L + slot * i + slot / 2, x0 = cx - bw / 2, lab = `<text x="${cx.toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="11.5" fill="${C.muted}" font-family="IBM Plex Mono, monospace">${esc(new Intl.DateTimeFormat('en-IE', {month: 'short'}).format(m.a))}${m.proj ? '*' : ''}</text>`;
+    ${yGrid([lo, 0, hi], y, L, W, R, {C, stroke: v => v === 0 ? C.muted : C.rule, dx: 8, fs: 12, fmt: shortMoney})}
+    ${list.map((m, i) => { const cx = L + slot * i + slot / 2, x0 = cx - bw / 2, lab = monoText(cx.toFixed(1), H - 8, `${esc(new Intl.DateTimeFormat('en-IE', {month: 'short'}).format(m.a))}${m.proj ? '*' : ''}`, C.muted, {anchor: 'middle', fs: 11.5});
       if (m.v == null) return `${lab}<text x="${cx.toFixed(1)}" y="${(y(0) - 6).toFixed(1)}" text-anchor="middle" font-size="10" fill="${C.muted}" font-family="IBM Plex Sans, sans-serif">no data</text>`;
       const up = m.v >= 0, y0 = y(0), y1 = y(m.v), top = Math.min(y0, y1), h = Math.max(1, Math.abs(y1 - y0)), col = up ? C.ok : C.bad;
       return `<g><title>${esc(fMon.format(m.a))}: ${m.v >= 0 ? '+' : '−'}${esc(money(Math.abs(m.v)))}${m.proj ? ' (projected)' : ''}</title><rect x="${x0.toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${col}"${m.proj ? ' fill-opacity=".55"' : ''}/>
-        <text x="${cx.toFixed(1)}" y="${(up ? top - 5 : top + h + 13).toFixed(1)}" text-anchor="middle" font-size="11.5" fill="${C.ink}" font-family="IBM Plex Mono, monospace">${m.v >= 0 ? '+' : '−'}${esc(shortMoney(Math.abs(m.v)).replace('€', '€'))}</text>${lab}</g>`; }).join('')}
+        ${monoText(cx.toFixed(1), (up ? top - 5 : top + h + 13).toFixed(1), `${m.v >= 0 ? '+' : '−'}${esc(shortMoney(Math.abs(m.v)))}`, C.ink, {anchor: 'middle', fs: 11.5})}${lab}</g>`; }).join('')}
   </svg>`;
 }
 function sixResults(){ const t = today(); return Array.from({length: 6}, (_, i) => { const m = new Date(t.getFullYear(), t.getMonth() - 5 + i, 1), r = monthResult(m); return {a: m, v: r && !r.partial ? monthEnding(r) : null, proj: !!(r && r.isCur && r.proj != null), r}; }); }
@@ -5816,7 +5793,7 @@ function vBalance(){
     ${S.assets.length ? `<div class="ledger">${S.assets.slice().sort((a, b) => (a.side > b.side) - (a.side < b.side) || num(b.value) - num(a.value)).map(a => `<div class="lrow"><span class="d">${a.side === 'own' ? 'Own' : 'Owe'}</span><span class="n">${esc(a.name)} <small>${esc(ASSET_KIND[a.kind] || 'Other')} · ${dlong(pd(a.date))}</small></span><span class="a">${money(a.value)} ${S.canWrite ? `<button class="btn small danger" data-act="asDel" data-id="${esc(a.id)}">Delete</button>` : ''}</span></div>`).join('')}</div>` : ''}
     ${S.canWrite ? `<div class="formbox"><h3>Add or update one</h3><div class="form">${field('as', 'name', 'What', {ph: 'Rory’s pension'})}${field('as', 'kind', 'Type', {select: Object.entries(ASSET_KIND)})}${field('as', 'value', 'Value or balance (€)', {money: true, ph: '8400'})}${field('as', 'date', 'As of', {type: 'date'})}</div>
       <div class="fld"><span class="label">Is it something we own or owe?</span>${seg('as', 'side', [['own', 'We own it'], ['owe', 'We owe it']])}</div>
-      ${S.err && S.errAt === 'as' ? `<p class="err">${esc(S.err)}</p>` : ''}<div class="actions"><button class="btn strong" data-act="asSave">Save</button></div><p class="mut" style="font-size:.85rem">Same name again updates it. The car, the TV and other things we use aren’t counted: they lose value and can’t pay a bill.</p></div>` : ''}</section>`);
+      ${formEnd(S.errAt === 'as', 'asSave', 'Save')}<p class="mut" style="font-size:.85rem">Same name again updates it. The car, the TV and other things we use aren’t counted: they lose value and can’t pay a bill.</p></div>` : ''}</section>`);
   return `<div class="stack">${head}${month}${past}${longForm}</div>`;
 }
 async function asSave(){
@@ -5990,7 +5967,7 @@ function wishPanel(AD, opts = {}){
     <div class="fld"><span class="label">Need or want?</span>${seg('wish', 'kind', [['need', 'We need it'], ['want', 'We want it']])}</div>
     <div class="fld"><span class="label">How much does it matter?</span>${seg('wish', 'prio', Object.entries(WPRIO))}</div>
     <div class="fld"><span class="label">Does Rory know?</span>${seg('wish', 'told', [['yes', 'Yes'], ['no', 'Not yet']])}</div>
-    ${S.err && S.errAt === 'wish' ? `<p class="err">${esc(S.err)}</p>` : ''}<div class="actions"><button class="btn strong" data-act="wishSave">Add to the wishlist</button></div></details>` : '';
+    ${formEnd(S.errAt === 'wish', 'wishSave', 'Add to the wishlist')}</details>` : '';
   if (opts.compact){ if (!list.length) return ''; return `<section class="panel"><header><h2>Wishlist</h2><button class="btn small" data-act="tab" data-to="advisor">Open</button></header>${list.slice(0, 3).map(w => wishRow(w, AD, true)).join('')}${list.length > 3 ? `<p class="mut" style="font-size:.88rem">+ ${list.length - 3} more in Plan → Advisor</p>` : ''}</section>`; }
   return `<section class="panel" id="wishPanel"><header><h2>Wishlist</h2><span class="mut" style="font-size:.85rem">Each want gets an honest answer from the whole picture</span></header>
     <p class="mut" style="font-size:.9rem">Put anything we want here, with its price. The advisor says: buy it, save for it (and for how long), wait, or stay away. It changes on its own as the money changes.</p>
@@ -6165,8 +6142,7 @@ function checkFormPanel(ws){
     ${cardPendBox('chk', 'card')}
     ${enOn() && has((S.f.chk || {}).kwh) ? (() => { const cd = pd((S.f.chk || {}).date) || today(), lm = addDays(enMonthStart(cd), -1); return `<div class="fld"><span class="label">Which month does the app show?</span>${seg('chk', 'kwhMonth', [['this', enMonth(cd)], ['last', enMonth(lm)]])}</div>`; })() : ''}
     ${typed ? `<p>Net position: <b class="mono">${money(checkNet(has(f.card) ? {...f, card: cardOwedFrom('chk', 'card').owed} : f))}</b> <span class="mut">(everything in the accounts minus what the card owes)</span></p>` : ''}
-    ${S.err && S.errAt === 'chk' ? `<p class="err">${esc(S.err)}</p>` : ''}
-    <div class="actions"><button class="btn strong" data-act="chkSave">${ck ? 'Save another check' : 'Save money check'}</button></div>` : '';
+    ${formEnd(S.errAt === 'chk', 'chkSave', ck ? 'Save another check' : 'Save money check')}` : '';
   return `<section class="panel"><header><h2><span class="stepn">2</span> Money check</h2>${ck ? `<span class="chip ok">✓ Done ${dshort(pd(ck.date))}</span>` : '<span class="chip idle">Not done yet</span>'}</header>${form}${unexplainedForm()}${checksList()}</section>${vRecon()}`;
 }
 function vWeek(){
@@ -6775,7 +6751,7 @@ render();
       S.got[name] = true; sched();
     }, onErr);
   }
-  let wasNarrow = window.innerWidth < 600; window.addEventListener('resize', () => { const n = window.innerWidth < 600; if (n !== wasNarrow){ wasNarrow = n; sched(); } });
+  let wasNarrow = narrowScreen(); window.addEventListener('resize', () => { const n = narrowScreen(); if (n !== wasNarrow){ wasNarrow = n; sched(); } });
   setInterval(() => { if (S.tab === 'today' && !document.activeElement?.matches('input,textarea,select')) sched(); }, 60000);
 })();
 </script>

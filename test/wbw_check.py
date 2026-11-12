@@ -736,7 +736,7 @@ with sync_playwright() as p:
         check('Paid early: Pay has “A bill, paid early” with the bills due in the next 31 days, and the form fits the phone', 'A bill, paid early' in v and 'Which bill' in v and not pf, pf[:4])
         ev(f"() => {{ S.f.pe = {{key: '{it['key']}', date: iso(today()), amount: ''}}; }}"); act('payEarly'); w(600)
         p1 = num("pocketStart().v")
-        outs = ev(f"() => pocketOut(today(), addDays(pd('{it['due']}'), 2)).filter(o => o.id === '{it['id']}').map(o => iso(o.d))")
+        outs = ev(f"() => accOut('bills', today(), addDays(pd('{it['due']}'), 2)).filter(o => o.id === '{it['id']}').map(o => iso(o.d))")
         gone = ev(f"() => !payEarlyList().some(x => x.key === '{it['key']}')")
         check('Paid early: the Bills Pocket goes down on the day it was paid, the bill is counted once (not again on its due day), and Pay no longer waits for it', abs(p0 - it['amt'] - p1) < .01 and gone and outs.count(ev("() => iso(today())")) == 1 and it['due'] not in outs, [p0, p1, it, outs])
         hat = ev(f"() => {{ const b = S.bills.find(x => x.id === '{it['id']}'); const h = (b.history || []).find(x => x.due === '{it['due']}'); return h ? h.at : null; }}")
@@ -819,13 +819,13 @@ with sync_playwright() as p:
           const E = cmpEval(c), g = id => E.rows.find(r => r.p.id === id); return {svc: cmpServices(c).map(x => x.key), small: g('s').missNeed, big: g('b').missNeed}; }""")
         check('Compare: a storage size with no name ("2TB") is one Storage service, and a bigger size covers a smaller need', g['svc'] == ['music', 'storage'] and g['small'] and not g['big'], g)
         j = ev("""() => { const out = []; for (const b of activeBills().filter(x => x.account === 'joint' && x.vault)){ const d = occurrences(b, today(), addDays(today(), 400))[0]; if (!d) continue; const ws = weekStartOf(d), we = addDays(ws, 6);
-            out.push({b: b.name, inOut: jointOut(ws, we).some(x => x.name === b.name)}); } return out; }""")
+            out.push({b: b.name, inOut: accOut('joint', ws, we).some(x => x.name === b.name)}); } return out; }""")
         if j: check('Joint account: a Joint bill kept in the Vault is paid by the Vault, not taken from the Joint’s week', all(not x['inOut'] for x in j), j)
         else: notes['cleanupJointVault'] = 'no Joint bill kept in the Vault'
-        e = ev("""async () => { const t = today(); let d = null; for (let k = 1; k <= 31 && !d; k++){ const x = addDays(t, k); if (pocketOut(x, x).length) d = x; } if (!d) return null;
+        e = ev("""async () => { const t = today(); let d = null; for (let k = 1; k <= 31 && !d; k++){ const x = addDays(t, k); if (accOut('bills', x, x).length) d = x; } if (!d) return null;
             const c = sortedChecks().filter(x => has(x.bills)).pop();
             await S.db.collection('checks').add({...c, id: undefined, vaultPrev: undefined, date: iso(d), at: new Date(d.getFullYear(), d.getMonth(), d.getDate(), 8).toISOString(), bills: 500});
-            return {d: iso(d), due: pocketOut(d, addDays(d, 1)).reduce((s2, x) => s2 + x.amt, 0)}; }""")
+            return {d: iso(d), due: accOut('bills', d, addDays(d, 1)).reduce((s2, x) => s2 + x.amt, 0)}; }""")
         if e:
             w(300); at(datetime.datetime.fromisoformat(e['d']) + datetime.timedelta(days=1, hours=12))
             v = num('pocketStart().v')
