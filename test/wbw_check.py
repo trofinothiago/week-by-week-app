@@ -990,6 +990,30 @@ with sync_playwright() as p:
         ev("() => { const keep = S.ntf; S.ntf = null; S.tab = 'settings'; S.sub.settings = 'setup'; render(); window.__k = keep; }"); vc = view(); ev("() => { S.ntf = window.__k; render(); }")
         check('Notifications: inside Claude (no notifications there) the card doesn’t show', 'On this phone' not in vc)
     step('notifications', f_notify)
+    # ---- the budget: the shop, cigarettes and drinks on their own lines; the projected month and the real month so far ----
+    def f_budget():
+        load(NOW); ev("() => { S.tab = 'plan'; S.sub.plan = 'budget'; render(); }"); v = view()
+        P = ev("""() => { const c = commitAt(monthStart(today())), L = essentialsLearned(); return {ess: essSum(c.g), want: L.amount ? L.amount * 52 / 12 : 0, keys: ESS_BUD.map(([k]) => c.g[k] || 0), seg: incomeSegs(c, RC_LIVE).find(x => x.label === 'Shop, cigarettes and drinks').v}; }""")
+        check('Budget: Groceries, Cigarettes and Drinks each have their own line in the projected month', all(x in v for x in ['Projected, the whole month', 'Groceries (the shop)', 'Cigarettes', 'Drinks']) and 'Shop, cigarettes and drinks' not in v.split('The next 24 months')[0], v[:600])
+        check('Budget: the three projected lines add up to what the shop, cigarettes and drinks really cost (the total and the % don’t change)', abs(P['ess'] - P['want']) < .01 and abs(P['seg'] - P['ess']) < .01 and (P['want'] == 0 or all(k > 0 for k in P['keys'])), P)
+        R = ev("""() => { const r = commitReal(monthStart(today())), a = iso(r.a), z = iso(r.z), by = {}; for (const x of S.spending) if (x.date >= a && x.date <= z && ESS_CATS.includes(x.cat)) by[x.cat] = (by[x.cat] || 0) + num(x.amount);
+          const pays = paydayRows(addDays(r.a, -1), r.z).filter(x => x.done), paid = S.cardlog.filter(e => e.type === 'payment' && e.date >= a && e.date <= z).reduce((t, e) => t + num(e.amount), 0);
+          return {g: r.g, by, inc: r.income, month: commitAt(monthStart(today())).income, got: r.got, pays: pays.reduce((t, x) => t + x.amt + keepPay(x.who), 0), paid, free: r.free, sum: r.committed + r.g.personal + r.g.saving + r.g.other + r.free}; }""")
+        check('Budget: the real month shows each of the shop, cigarettes and drinks at what was really bought this month', all(abs(R['g'][k] - R['by'].get(c, 0)) < .01 for k, c in [('groceries', 'Groceries'), ('cigarettes', 'Cigarettes'), ('drinks', 'Drinks')]), R)
+        check('Budget: the real month counts the pays that came (ticked), the card payments made, and is measured against the month’s income', R['got'] >= R['pays'] - .01 and abs(R['g']['card'] - R['paid']) < .01 and abs(R['inc'] - R['month']) < .01 and abs(R['sum'] - R['inc']) < .01, R)
+        check('Budget: the real bar is drawn under the projected one, with the money in so far', 'Real so far' in v and 'Money in so far' in v and 'Not spent yet' in v, v[:900])
+        d0 = R['g']['drinks']
+        ev(f"() => {{ S.f.spend = {{date: '{NOW.date()}', what: 'Kit budget drinks', amount: '7.77', cat: 'Drinks', paidFrom: 'joint', who: 'both', kind: 'planned', told: 'before', note: ''}}; }}"); ev("async () => { await spendSave(); }"); w()
+        d1 = ev("() => commitReal(monthStart(today())).g.drinks")
+        check('Budget: a drink bought today shows straight away in the real month', abs(d1 - d0 - 7.77) < .01, f'{d0} -> {d1}')
+        sid = ev("() => S.spending.find(x => x.what === 'Kit budget drinks').id"); act('spendDel', id=sid); act('spendDel', id=sid)
+        check('Budget: deleting it takes it back out of the real month', abs(ev("() => commitReal(monthStart(today())).g.drinks") - d0) < .01)
+        for wd in (375, 430):
+            for dark in (False, True):
+                pg.set_viewport_size({'width': wd, 'height': 900}); pg.emulate_media(color_scheme='dark' if dark else 'light'); ev("() => { S.tab = 'plan'; S.sub.plan = 'budget'; render(); }"); w(200)
+                f = ev(PROBE); check(f'Budget: both bars fit the phone ({wd} px, {"dark" if dark else "light"})', not f, f[:6])
+        pg.set_viewport_size({'width': 390, 'height': 900}); pg.emulate_media(color_scheme='light')
+    step('budget', f_budget)
     step('ahead', f_ahead)
     br.close()
 

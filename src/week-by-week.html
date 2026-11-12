@@ -1237,6 +1237,8 @@ function jointLeft(ws){   // what the Joint account has left this week: paydays 
 }
 /* the shop, cigarettes and drinks: logged one by one as they happen; the system learns their real weekly amount (there are no fixed weekly budgets) */
 const ESS_CATS = ['Groceries', 'Cigarettes', 'Drinks'];
+const ESS_BUD = [['groceries', 'Groceries', 'Groceries (the shop)', 'var(--s3)'], ['cigarettes', 'Cigarettes', 'Cigarettes', 'color-mix(in srgb,var(--s3) 55%,#000)'], ['drinks', 'Drinks', 'Drinks', 'color-mix(in srgb,var(--s3) 45%,#fff)']];   // their own lines in the budget: key, category, label, colour
+const essSum = g => ESS_BUD.reduce((t, [k]) => t + (g[k] || 0), 0);
 function essentialsLearned(){   // the real weekly average of the shop, cigarettes and drinks over the last full weeks (up to 8), from the purchases logged
   const t = today(), cur = weekStartOf(t), s0 = pd(st().startedOn), first = s0 ? (weekStartOf(s0) < s0 ? addDays(weekStartOf(s0), 7) : weekStartOf(s0)) : null;
   if (!first) return {amount: null, weeks: 0, by: {}};
@@ -1574,39 +1576,62 @@ async function chkSave(){
 }
 /* ---------- budget commitments ---------- */
 const SAVE_BG = 'var(--pocket)';
-const BUD = [['bills', 'Bills', 'var(--s1)'], ['reserve', 'Reserve for bills not listed yet', 'var(--bills)'], ['vaults', 'Vaults (yearly and 2-monthly bills)', 'var(--s2)'], ['budgets', 'Shop, cigarettes and drinks', 'var(--s3)'], ['debts', 'Loans and Klarna', 'var(--s4)'], ['card', 'Credit card payment', 'var(--s5)'], ['personal', 'Kept by each of us', 'var(--s6)']];
+const BUD = [['bills', 'Bills', 'var(--s1)'], ['reserve', 'Reserve for bills not listed yet', 'var(--bills)'], ['vaults', 'Vaults (yearly and 2-monthly bills)', 'var(--s2)'], ...ESS_BUD.map(([k, , l, col]) => [k, l, col]), ['debts', 'Loans and Klarna', 'var(--s4)'], ['card', 'Credit card payment', 'var(--s5)'], ['personal', 'Kept by each of us', 'var(--s6)']];
 const monthStart = d => new Date(d.getFullYear(), d.getMonth(), 1);
 const monthEnd = d => new Date(d.getFullYear(), d.getMonth() + 1, 0);
 const instMonthly = (amt, every) => every === 'week' ? amt * 52 / 12 : every === '2w' ? amt * 26 / 12 : amt;
 function commitAt(m0, opt = {}){
   const m1 = monthEnd(m0), s = st(), mo = w => w * 52 / 12, rm = new Set(opt.remove || []);
-  const g = {bills: 0, reserve: 0, vaults: 0, budgets: 0, debts: 0, card: 0, personal: mo(keepWeekly('thiago') + keepWeekly('rory')), whatif: 0, saving: opt.noSaving ? 0 : mo(Math.max(0, num((S.plan || {}).efWeekly)))};
+  const g = {bills: 0, reserve: 0, vaults: 0, ...Object.fromEntries(ESS_BUD.map(([k]) => [k, 0])), debts: 0, card: 0, personal: mo(keepWeekly('thiago') + keepWeekly('rory')), whatif: 0, saving: opt.noSaving ? 0 : mo(Math.max(0, num((S.plan || {}).efWeekly)))};
   const income = mo(incWeekly('thiago') + incWeekly('rory'));
   for (const b of activeBills()){
     if (rm.has('b:' + b.id) || b.account === 'rory' || b.account === 'thiago') continue;
     const v = b.freq === 'instal' ? instMonth(b, m0) : monthlyEq(b); if (b.vault) g.vaults += v; else g.bills += v;
   }
-  { const L = essentialsLearned(); if (L.amount) g.budgets += L.amount * 52 / 12; }   // g.budgets: what the shop, cigarettes and drinks really cost
+  { const L = essentialsLearned(), by = Object.values(L.by).reduce((t, v) => t + v, 0);   // what the shop, cigarettes and drinks really cost, each on its own line: their weekly total (rounded up to €5) shared by what each really costs
+    if (L.amount && by > 0) for (const [k, cat] of ESS_BUD) g[k] = L.amount * 52 / 12 * (L.by[cat] || 0) / by; }
   if (s.holdBills && !rm.has('reserve')){ try { const f0 = flow(); g.reserve = Math.max(0, f0.tB - f0.needBills) * 52 / 12; } catch (e) {} }   // the Bills Pocket reserve for bills not in the system yet is money already promised
   for (const l of S.loans){ if (rm.has('l:' + l.id)) continue; const ks = loanInst(l); if (ks.length && ks[0].d <= m1 && ks[ks.length - 1].d >= m0) g.debts += instMonthly(num(l.instalment), l.every); }
   for (const p of S.klarna.filter(x => x.paidFrom === 'joint')){ const ks = klarnaInst(p); if (ks.length && ks[0].d <= m1 && ks[ks.length - 1].d >= m0) g.debts += instMonthly(num(p.total) / ks.length, p.every === '2w' ? '2w' : 'month'); }
   const cw = num(s.cardWeekly); if (cw > 0 && !rm.has('card') && !(opt.payoff && opt.payoff < m0)) g.card = mo(cw);
   const x = opt.extra;
   if (x && x.monthly > 0 && x.start){ const end = addMonthsClamp(x.start, Math.max(1, x.months || 1) - 1); if (m0 >= monthStart(x.start) && m0 <= end) g.whatif = x.monthly; }
-  const committed = g.bills + g.reserve + g.vaults + g.budgets + g.debts + g.card + g.whatif;
+  const committed = g.bills + g.reserve + g.vaults + essSum(g) + g.debts + g.card + g.whatif;
   return {income, g, committed, free: income - committed - g.personal - g.saving, pct: income > 0 ? committed / income : null};
+}
+function commitReal(m0){   // what really happened in a month so far, in commitAt's groups, against the month's income: the real twin of the projected bar (the 1st's bills are paid from what the Bills Pocket saved before, so money in so far alone would read as a loss)
+  const t = today(), s0 = pd(st().startedOn), a0 = monthStart(m0), a = s0 && s0 > a0 ? s0 : a0, z = monthEnd(m0) < t ? monthEnd(m0) : t, inM = d => !!d && d >= a && d <= z;
+  const g = {bills: 0, reserve: 0, vaults: 0, ...Object.fromEntries(ESS_BUD.map(([k]) => [k, 0])), other: 0, debts: 0, card: 0, personal: 0, whatif: 0, saving: 0};
+  const income = commitAt(m0).income; if (z < a) return {a, z, income, got: 0, g, committed: 0, free: income, pct: 0};
+  const pays = paydayRows(addDays(a, -1), z), ins = flowRows(addDays(a, -1), z, 0).filter(r => r.kind === 'in');
+  let got = ins.reduce((x, r) => x + r.amt, 0) - pays.reduce((x, r) => x + r.amt, 0);   // money added, refunds and savings interest
+  for (const r of pays.filter(r => r.done)){ got += r.amt + keepPay(r.who); g.personal += keepPay(r.who); }   // each pay that really came (ticked in Week): what reached the Joint, and what its owner kept
+  for (const b of billsTimeline()){ if (b.vault || ['rory', 'thiago', 'nubank'].includes(b.account)) continue; for (const o of billDays(b, a, z)) g.bills += occAmount(b, o.due); }   // Vault bills (and Brazil's) are paid by the Vault: counted below as what went into it
+  for (const k of S.loans.flatMap(loanInst)) if (!['rory', 'thiago'].includes(k.l.paidFrom || 'bills') && inM(k.d)) g.debts += k.amount;
+  for (const k of S.klarna.flatMap(klarnaInst)) if (k.p.paidFrom === 'joint' && inM(k.d)) g.debts += k.amount;
+  for (const e of S.cardlog) if (e.type === 'payment' && inM(pd(e.date))) g.card += num(e.amount);
+  for (const x of S.spending){ if (!inM(pd(x.date))) continue; const e = ESS_BUD.find(y => y[1] === x.cat);   // the shop, cigarettes and drinks from any account (as they're learned); other purchases from our shared money
+    if (e) g[e[0]] += num(x.amount); else if (['joint', 'card', 'bills', 'cash'].includes(x.paidFrom)) g.other += num(x.amount); }
+  for (const [wsI, wk] of Object.entries(S.weeks)){ const tr = wk.transfers || {};   // the weekly transfers into the Vault and the emergency fund, at what they really moved
+    for (const x of transferSteps()) if (tr[x.id] && (x.id === 'ef' || x.id.startsWith('vault')) && inM(localDay(stepStamp(wk, wsI, x.id)))) g[x.id === 'ef' ? 'saving' : 'vaults'] += stepSent(wsI, x); }
+  for (const m of S.moves){ if (!inM(pd(m.date)) || m.from === 'cash' || m.to === 'cash') continue;   // money moved by hand into or out of the emergency fund, or into the Vault (cash at home stays part of the fund)
+    if (m.to === 'ef') g.saving += num(m.amount); else if (m.from === 'ef') g.saving -= num(m.amount);
+    if (m.to === 'vaults' && m.from !== 'vaults') g.vaults += num(m.amount); }
+  const committed = g.bills + g.vaults + essSum(g) + g.debts + g.card;
+  return {a, z, income, got, g, committed, free: income - committed - g.personal - g.saving - g.other, pct: income > 0 ? committed / income : null};
 }
 const pctTxt = p => p == null ? '—' : `${Math.round(p * 100)}%`;
 const commitState = p => p == null ? 'idle' : p > .8 ? 'bad' : p > .65 ? 'warn' : 'ok';
-function commitBar(c){
+function commitBar(c, real){   // the month as one bar: the projection (commitAt), or what really happened so far (commitReal)
   if (!(c.income > 0)) return '';
-  const segs = BUD.map(([k, l, col]) => [k, l, col, c.g[k]]).filter(x => x[3] > 0);
+  const segs = BUD.map(([k, l, col]) => [k, l, col, c.g[k]]).filter(x => x[3] > 0), per = real ? 'so far' : 'a month';
   if (c.g.whatif > 0) segs.push(['whatif', 'What if (new payment)', 'var(--ink)', c.g.whatif]);
+  if (c.g.other > 0) segs.push(['other', 'Other purchases', 'var(--personal)', c.g.other]);
   if (c.g.saving > 0) segs.push(['saving', 'Emergency fund (saving)', SAVE_BG, c.g.saving]);
-  const tot = Math.max(c.income, segs.reduce((a, x) => a + x[3], 0));
-  return `<div class="cbar" role="img" aria-label="${pctTxt(c.pct)} of income committed">${segs.map(([k, l, col, v]) => `<i style="width:${(v / tot * 100).toFixed(2)}%;background:${col}" title="${esc(l)}: ${esc(money(v))} a month"></i>`).join('')}${c.free > 0 ? `<i class="free" style="width:${(c.free / tot * 100).toFixed(2)}%" title="Free: ${esc(money(c.free))} a month"></i>` : ''}</div>
+  const tot = Math.max(c.income, segs.reduce((a, x) => a + x[3], 0)), left = real ? 'Not spent yet' : essentialsKnown() ? 'Free' : 'Left, before the shop, cigarettes and drinks';
+  return `<div class="cbar" role="img" aria-label="${pctTxt(c.pct)} of income ${real ? 'already gone to what’s committed' : 'committed'}">${segs.map(([k, l, col, v]) => `<i style="width:${(v / tot * 100).toFixed(2)}%;background:${col}" title="${esc(l)}: ${esc(money(v))} ${per}"></i>`).join('')}${c.free > 0 ? `<i class="free" style="width:${(c.free / tot * 100).toFixed(2)}%" title="${left}: ${esc(money(c.free))} ${per}"></i>` : ''}</div>
     <div class="clegend">${segs.map(([k, l, col, v]) => `<span><i class="sw" style="--c:${col}"></i>${esc(l)}</span><span class="v">${money(v)}</span><span class="p">${pctTxt(v / c.income)}</span>`).join('')}
-      <span><i class="sw free"></i><b>${essentialsKnown() ? 'Free' : 'Left, before the shop, cigarettes and drinks'}</b></span><span class="v"><b>${money(c.free)}</b></span><span class="p">${pctTxt(c.free / c.income)}</span>
+      <span><i class="sw free"></i><b>${left}</b></span><span class="v"><b>${money(c.free)}</b></span><span class="p">${pctTxt(c.free / c.income)}</span>
       <span class="tot">Income</span><span class="v tot">${money(c.income)}</span><span class="p tot">100%</span></div>`;
 }
 function commitTimeline(opt){
@@ -1619,7 +1644,7 @@ function commitTimeline(opt){
   const keys = BUD.map(b => b[0]).concat('whatif', 'saving'), col = Object.fromEntries(BUD.map(b => [b[0], b[2]]).concat([['whatif', 'var(--ink)'], ['saving', 'var(--pocket)']]));
   const bars = cs.map(({m, c}, i) => {
     let acc = 0; const x = L + i * (bw + gap) + gap / 2;
-    const order = ['bills', 'reserve', 'vaults', 'budgets', 'debts', 'card', 'whatif', 'personal', 'saving'];
+    const order = ['bills', 'reserve', 'vaults', ...ESS_BUD.map(([k]) => k), 'debts', 'card', 'whatif', 'personal', 'saving'];
     const rects = order.filter(k => c.g[k] > 0).map(k => { const y0 = y(acc), y1 = y(acc + c.g[k]); acc += c.g[k]; return `<rect x="${x.toFixed(1)}" y="${y1.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0, y0 - y1 - 1).toFixed(1)}" fill="${col[k]}"${k === 'whatif' ? ' fill-opacity=".75"' : ''}/>`; }).join('');
     const free = c.free > 0 ? `<rect x="${x.toFixed(1)}" y="${y(acc + c.free).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0, y(acc) - y(acc + c.free) - 1).toFixed(1)}" fill="var(--rule2)" stroke="var(--rule)" stroke-width="1"/>` : '';
     return `<g><title>${esc(fMY.format(m))}: ${pctTxt(c.pct)} committed · free ${esc(money(c.free))} a month</title>${rects}${free}<rect x="${x.toFixed(1)}" y="${T}" width="${bw.toFixed(1)}" height="${H - T - B}" fill="transparent"/></g>`;
@@ -1649,10 +1674,12 @@ function vBudget(){
   const s = st(), pr = project(0), base = {payoff: pr && pr.payoff};
   const now = commitAt(monthStart(today()), base);
   if (!(now.income > 0)) return `<div class="stack"><section class="panel"><header><h2>Budget</h2></header>${emptyBox('Add both incomes in Settings, then bills, loans and the card payment. This page then shows how much of your income is committed and how much is free, month by month.', 'goSetup', 'Open Settings')}</section></div>`;
-  const stt = commitState(now.pct);
+  const stt = commitState(now.pct), R = commitReal(monthStart(today()));
   const head = `<section class="panel"><header><h2>This month</h2><span class="mut" style="font-size:.85rem">Income: Thiago ${money(incWeekly('thiago') * 52 / 12)} + Rory ${money(incWeekly('rory') * 52 / 12)} a month</span></header>
     <div class="bighead"><b>${pctTxt(now.pct)}</b><span>of our income is committed ${sigChip(stt)}</span><span class="mut">Free: <b class="mono">${money(now.free)}</b> a month · ${money(now.free * 12 / 52)} a week</span></div>
-    ${commitBar(now)}
+    <h3>Projected, the whole month</h3>${commitBar(now)}
+    <h3>Real so far · ${dshort(R.a)}–${dshort(R.z)}</h3><p class="mut" style="font-size:.85rem">Money in so far: <b class="mono">${money(R.got)}</b> of ${money(R.income)} (the pays ticked in Week, money added, refunds)</p>${commitBar(R, true)}
+    <p class="mut" style="font-size:.85rem">What really went out of the month’s income: bills on their dates, money put in the Vault, every purchase, loans and Klarna, the card payments, the emergency fund, and what each of us kept from the pays that came.</p>
     <p class="mut" style="font-size:.85rem">Committed means already promised: bills, Vaults, the weekly shop and cigarettes, loans, Klarna paid from the Joint account and the card payment. Under 65% is comfortable, 65–80% is tight, over 80% leaves no room for surprises. What each of you keeps is shown separately and isn’t counted as committed.</p></section>`;
   const fr = freedoms(pr);
   const timeline = `<section class="panel"><header><h2>The next 24 months</h2><span class="mut" style="font-size:.85rem">Hover a month for its numbers</span></header>
@@ -2585,7 +2612,7 @@ function debtSeries(D){
 function incomeSegs(c, C){
   return [
     {label: 'Bills and Vaults', v: c.g.bills + c.g.reserve + c.g.vaults, c: C.s1},
-    {label: 'Shop, cigarettes and drinks', v: c.g.budgets, c: C.s2},
+    {label: 'Shop, cigarettes and drinks', v: essSum(c.g), c: C.s2},
     {label: 'Kept by each of us', v: c.g.personal, c: C.s3},
     {label: 'Debt payments', v: c.g.debts + c.g.card, c: C.s4},
     {label: 'Emergency fund', v: c.g.saving, c: C.s5},
@@ -2970,7 +2997,7 @@ function paydayRows(a, z){   // what each payday really brought into the Joint a
       let d = due, amt = plan;
       if (tr[id]){ const td = at[id] ? localDay(at[id]) : null; if (td && td < due) d = td;   // money that came early counts the day it came; a late tick still counts on payday
         amt = am[id] && has(am[id].a) ? num(am[id].a) : am[id] && has(am[id].p) ? num(am[id].p) : plan; }
-      if (d && d > a && d <= z && amt > 0) out.push({kind: 'in', name: `${STEP_IN[id]} → Joint${tr[id] ? '' : ' (planned, not ticked yet)'}`, amt, d});
+      if (d && d > a && d <= z && amt > 0) out.push({kind: 'in', name: `${STEP_IN[id]} → Joint${tr[id] ? '' : ' (planned, not ticked yet)'}`, amt, d, who: id, done: !!tr[id]});
     }
   }
   return out;
@@ -3122,7 +3149,7 @@ function efInterestBetween(a, z){   // interest paid into the emergency fund aft
 function efInterestAhead(days){ const e = efSeries(); return e.known ? Math.max(0, e.amount) * (Math.pow(1 + efDayRate(iso(today())), Math.max(0, days)) - 1) : 0; }
 function essentialsMonthly(){
   const c = commitAt(monthStart(today()), {remove: ['card'], noSaving: true});
-  return c.g.bills + c.g.reserve + c.g.vaults + c.g.budgets + c.g.debts;
+  return c.g.bills + c.g.reserve + c.g.vaults + essSum(c.g) + c.g.debts;
 }
 const EF_MONTHS = [3, 6, 9, 12];
 function efTargets(){
@@ -5383,7 +5410,7 @@ function cardIntPanel(){
 }
 
 /* ---------- system health: the page checks itself every time it opens; Claude runs the full check every Monday ---------- */
-const APP_VERSION = '2026.11.08-8';
+const APP_VERSION = '2026.11.12';
 function selfCheck(){   // cheap checks on the data, run on every open: things that don't fit, and the weekly tasks that should have run
   const key = `${S._rt}|${iso(today())}`; if (S._hc && S._hc.k === key) return S._hc.v;
   const items = [], t = today(), add = (st2, area, txt) => items.push({st: st2, area, t: txt});
