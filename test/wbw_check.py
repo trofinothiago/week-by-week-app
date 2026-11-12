@@ -216,6 +216,8 @@ with sync_playwright() as p:
       S.tab = 'settings'; S.sub.settings = 'health'; render(); const v = document.getElementById('view'), t = v.innerText, ds = [...v.querySelectorAll('details')];
       const r = {one: /1\s*Kit idea one/.test(t), three: /3\s*Kit idea three/.test(t), built: t.includes('Kit idea built'), rowHidden: ds.some(d => !d.open && d.innerHTML.includes('kit row')), newsFolded: ds.some(d => !d.open && /What’s new/.test(d.querySelector('summary').innerText)), selfCheck: t.includes('System health')};
       S.health = {...(keep || {}), suggestions: []}; render(); r.noIdeas = !document.getElementById('view').innerText.includes('Ideas waiting'); S.health = keep; S.tab = 'week'; render(); return r; }""")
+    hw = ev("() => { S.tab = 'settings'; S.sub.settings = 'setup'; render(); const t = document.getElementById('view').innerText, r = {gone: !/How it works|What updates on its own/.test(t), setup: t.includes('Save setup') && t.includes('Backup')}; S.tab = 'week'; render(); return r; }")
+    check('Setup (cleaner): the two long explanations are gone; the setup form and the backup stay', hw['gone'] and hw['setup'], hw)
     check('System (cleaner): the self-check stays; Claude’s check is one line with the detail folded; only ideas waiting show, keeping their number; What’s new folded', sy['one'] and sy['three'] and not sy['built'] and sy['rowHidden'] and sy['newsFolded'] and sy['selfCheck'] and sy['noIdeas'], sy)
     ev("() => render()")
     ev("() => { S.canWrite = false; render(); }"); rv = view()
