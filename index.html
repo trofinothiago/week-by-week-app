@@ -1292,7 +1292,7 @@ function freeLeft(ws){ // free money in the Joint account: what's really left af
   const left = jointLeft(ws), over = addDays(ws, 6) < today();
   const daysAfter = over ? 0 : Math.max(0, dayDiff(today() > ws ? today() : ws, addDays(ws, 6))) + (today() < ws ? 1 : 0);
   const L = essentialsLearned(), expected = L.amount != null ? Math.max(0, L.amount - sumAmt(weekSpending(ws, 'joint').filter(x => ESS_CATS.includes(x.cat)))) : 0;   // what they really cost each week, less what's already been bought
-  const still = over ? 0 : expected * Math.min(1, daysAfter / 7);   // what they still need for the days left; once the week is over, only what really happened counts
+  const still = over || !daysAfter ? 0 : expected;   // all they still need this week (the big shop and the drinks come at the weekend, so no share by days); on the last day and once the week is over, only what really happened counts
   return Math.round((left - still) * 100) / 100 || 0;
 }
 const isSlip = x => x.kind !== 'unknown' && (x.kind === 'impulse' || (x.told && x.told !== 'before'));
@@ -3009,17 +3009,18 @@ function efStart(){ const d = [PL().efOn].concat(S.checks.filter(c => has(c.ef))
 const chkComplete = c => ['joint', 'bills', 'vaults', 'aib', 'card'].every(k => has(c[k])) && (has(c.ef) || !efInUse() || !efStart() || c.date < efStart());
 const poolOf = c => num(c.joint) + num(c.bills) + num(c.vaults) + num(c.ef) + num(c.aib) - num(c.card);
 const localDay = stamp => { const x = new Date(stamp); return isNaN(x) ? null : new Date(x.getFullYear(), x.getMonth(), x.getDate()); };
-function paydayRows(a, z){   // what each payday really brought into the Joint account: the day it arrived and its real amount once ticked; the plan for a payday not ticked
+function paydayRows(a, z){   // what each payday really brought into the Joint account: the day it arrived and its real amount once ticked; the plan for a payday not ticked; at = when it landed (the tick on the day, else midday)
   const s = st(), fl = flow(), out = [];
   for (let ws = weekStartOf(addDays(a, 1)); ws <= z; ws = addDays(ws, 7)){
     const w = S.weeks[iso(ws)] || {}, tr = w.transfers || {}, at = w.transfersAt || {}, am = w.amounts || {};
     for (const [id, key, plan] of [['rory', 'paydayRory', toJointPay('rory')], ['thiago', 'paydayThiago', toJointPay('thiago')]]){
       const pdx = payDate(id, ws); if (!pdx && payFreq(id) !== 'weekly') continue;   // no pay that week
       const due = pdx ? pdx.d : addDays(ws, 4);   // bank holidays included
-      let d = due, amt = plan;
+      let d = due, amt = plan, stamp = '';
       if (tr[id]){ const td = at[id] ? localDay(at[id]) : null; if (td && td < due) d = td;   // money that came early counts the day it came; a late tick still counts on payday
+        if (td && td <= due) stamp = at[id];
         amt = am[id] && has(am[id].a) ? num(am[id].a) : am[id] && has(am[id].p) ? num(am[id].p) : plan; }
-      if (d && d > a && d <= z && amt > 0) out.push({kind: 'in', name: `${STEP_IN[id]} → Joint${tr[id] ? '' : ' (planned, not ticked yet)'}`, amt, d, who: id, done: !!tr[id]});
+      if (d && d > a && d <= z && amt > 0) out.push({kind: 'in', name: `${STEP_IN[id]} → Joint${tr[id] ? '' : ' (planned, not ticked yet)'}`, amt, d, who: id, done: !!tr[id], at: stamp || `${iso(d)}T12:00:00`});
     }
   }
   return out;
@@ -3028,7 +3029,7 @@ function flowRows(a, z, card0, opt = {}){ // money in and out of our shared acco
   const s = st(), fl = flow();
   const inR = d => d && d > a && d <= z, rows = [], sIn = (x, stamp) => opt.sA ? stamp > opt.sA && stamp <= opt.sZ && !!pd(x.date) : inR(pd(x.date));   // between two money checks: by the time it was logged
   const add = (kind, name, amt, d) => { if (Math.abs(amt) >= 0.005) rows.push({kind, name, amt, d: d || null}); };
-  for (const r of paydayRows(a, z)) add(r.kind, r.name, r.amt, r.d);
+  for (const r of opt.sA ? paydayRows(addDays(a, -1), z).filter(r => r.at > opt.sA && r.at <= opt.sZ) : paydayRows(a, z)) add(r.kind, r.name, r.amt, r.d);   // between two money checks: by when the pay landed
   for (const e of S.cardlog) if (e.type === 'refund' && inR(pd(e.date))) add('in', `Refund to the card${e.note ? ` (${e.note})` : ''}`, num(e.amount), pd(e.date));
   for (const b of billsTimeline()){
     if (['rory', 'thiago', 'nubank'].includes(b.account)) continue;   // Brazil bills are counted by the Wise transfer
@@ -5467,7 +5468,7 @@ function cardIntPanel(){
 }
 
 /* ---------- system health: the page checks itself every time it opens; Claude runs the full check every Monday ---------- */
-const APP_VERSION = '2026.11.12-5';
+const APP_VERSION = '2026.11.12-6';
 function selfCheck(){   // cheap checks on the data, run on every open: things that don't fit, and the weekly tasks that should have run
   const key = `${S._rt}|${iso(today())}`; if (S._hc && S._hc.k === key) return S._hc.v;
   const items = [], t = today(), add = (st2, area, txt) => items.push({st: st2, area, t: txt});

@@ -333,6 +333,15 @@ with sync_playwright() as p:
         tr = ev(f"() => (S.weeks['{info['ws']}'] || {{}}).transfers || {{}}")
         check(f"week of {info['ws']}: every transfer ticked on payday", all(tr.get(x) for x in info['ids']) and tr.get('card'), tr)
         check('card payment logged with the week', bool(ev(f"() => weekCardPay('{info['ws']}')")))
+        # a pay ticked at 19:00 landed after a money check at 13:00 the same day and before one at 20:00 (the kit states the rule itself)
+        pays = ev(f"""() => {{ const ws = pd('{info['ws']}'), day = '{info['pay']}', w = S.weeks['{info['ws']}'] || {{}}, am = w.amounts || {{}};
+            const c0 = sortedChecks().filter(c => ['joint','bills','vaults','ef','aib','card'].every(k => has(c[k]))).pop(); if (!c0 || c0.date >= day) return null;
+            const inAt = h => reconcile(c0, {{date: day, at: `${{day}}T${{h}}:00:00.000Z`}}).inSum;
+            const due = ['rory', 'thiago'].filter(id => (w.transfers || {{}})[id] && payDate(id, ws) && iso(payDate(id, ws).d) === day);
+            const want = due.reduce((t, id) => t + (am[id] && has(am[id].a) ? num(am[id].a) : am[id] && has(am[id].p) ? num(am[id].p) : toJointPay(id)), 0);
+            return {{due, want: Math.round(want * 100) / 100, got: Math.round((inAt('20') - inAt('13')) * 100) / 100}}; }}""")
+        if pays is None: notes['payTime'] = 'no complete money check before the payday'
+        else: check(f"money check: a pay ticked at 19:00 counts after a 13:00 check, not before ({', '.join(pays['due']) or 'no pay due that day'})", abs(pays['got'] - pays['want']) < .02, pays)
         check('Pay has no transfers left for the week', not ev(f"() => payToDo().some(x => x.kind === 'step' || x.kind === 'card')"))
         check('Joint tile: no "once the pays are in" after everything is done', not ev(f"() => jointShow(pd('{info['ws']}')).pending"))
         sun = datetime.datetime.fromisoformat(info['ws']) + datetime.timedelta(days=6, hours=20); at(sun)
@@ -364,6 +373,20 @@ with sync_playwright() as p:
         ev("() => { S.tab = 'week'; render(); }")
         check("the week's report draws after the whole week", not any(s in view() for s in BAD))
     step('week', f_week)
+
+    # ---- 5a. free money: all the shop, cigarettes and drinks still need this week is kept back until the last day (the kit states the rule itself) ----
+    def f_free():
+        load(NOW)
+        mon = (NOW - datetime.timedelta(days=NOW.weekday())).replace(hour=20, minute=0, second=0, microsecond=0)
+        for d, label in [(mon + datetime.timedelta(days=3), 'mid-week'), (mon + datetime.timedelta(days=6), 'on Sunday')]:
+            at(d)
+            r = ev("""() => { const ws = weekStartOf(today()), z = addDays(ws, 6), L = essentialsLearned().amount; if (L == null) return null;
+                const bought = S.spending.filter(x => x.paidFrom === 'joint' && ESS_CATS.includes(x.cat) && pd(x.date) >= ws && pd(x.date) <= z).reduce((t, x) => t + num(x.amount), 0);
+                const left = jointLeft(ws), want = iso(today()) === iso(z) ? left : left - Math.max(0, L - bought);
+                return {left, need: Math.round(Math.max(0, L - bought) * 100) / 100, free: freeLeft(ws), want: Math.round(want * 100) / 100}; }""")
+            if r is None: notes['freeMoney'] = 'the shop is not learned yet'; return
+            check(f"free money {label}: what's left less {'nothing' if label == 'on Sunday' else 'all the shop, cigarettes and drinks still need'}", abs(r['free'] - r['want']) < .02, r)
+    step('free money', f_free)
 
     # ---- 5b. two money checks on the same day: the later one is the one that counts ----
     def f_sameday():
