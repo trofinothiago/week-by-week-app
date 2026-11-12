@@ -768,6 +768,15 @@ body.sheet-open{overflow:hidden}
 .ios-adv b.inl{display:inline;font-size:inherit}
 .tint{color:var(--accent)}
 .sw.sq{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px}
+/* Today: where we're heading, a traffic light and the lines behind it */
+.tlhead{display:flex;align-items:center;gap:10px}
+.tlight{display:inline-flex;flex:none;gap:5px;padding:5px 7px;border-radius:14px;background:var(--rule2)}
+.tlight i{width:16px;height:16px;border-radius:50%;opacity:.18}
+.tlight .r{background:var(--bad)} .tlight .a{background:var(--warn)} .tlight .g{background:var(--ok)}
+.tlight.bad .r,.tlight.warn .a,.tlight.ok .g{opacity:1}
+.tline{display:block;font-size:.92rem;line-height:1.35}
+.tline.bad>b{color:var(--bad)} .tline.ok>b{color:var(--ok)}
+.tline small{display:block;margin-left:18px;color:var(--muted);font-size:.82rem}
 /* lists that only grow: one short line per entry (like Pay's "Done this week"), each week folded */
 .elist{display:grid;gap:4px}
 .eweek>summary{font-size:.95rem}

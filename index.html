@@ -773,6 +773,15 @@ body.sheet-open{overflow:hidden}
 .ios-adv b.inl{display:inline;font-size:inherit}
 .tint{color:var(--accent)}
 .sw.sq{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px}
+/* Today: where we're heading, a traffic light and the lines behind it */
+.tlhead{display:flex;align-items:center;gap:10px}
+.tlight{display:inline-flex;flex:none;gap:5px;padding:5px 7px;border-radius:14px;background:var(--rule2)}
+.tlight i{width:16px;height:16px;border-radius:50%;opacity:.18}
+.tlight .r{background:var(--bad)} .tlight .a{background:var(--warn)} .tlight .g{background:var(--ok)}
+.tlight.bad .r,.tlight.warn .a,.tlight.ok .g{opacity:1}
+.tline{display:block;font-size:.92rem;line-height:1.35}
+.tline.bad>b{color:var(--bad)} .tline.ok>b{color:var(--ok)}
+.tline small{display:block;margin-left:18px;color:var(--muted);font-size:.82rem}
 /* lists that only grow: one short line per entry (like Pay's "Done this week"), each week folded */
 .elist{display:grid;gap:4px}
 .eweek>summary{font-size:.95rem}
@@ -1486,7 +1495,7 @@ function slopePerWeek(pts){
 }
 const TSTATE = {up:{label:'Rising', icon:'▲', cls:'ok'}, flat:{label:'Steady', icon:'▶', cls:'warn'}, down:{label:'Falling', icon:'▼', cls:'bad'}, none:{label:'Not enough data yet', icon:'•', cls:'idle'}};
 function trendData(){
-  let pts = sortedChecks().slice(-8).map(c => ({d: pd(c.date), v: checkNet(c)})), src = 'net';
+  let pts = sortedChecks().slice(-8).map(c => ({d: pd(c.date), v: checkNet(c) - num(c.bills) - num(c.vaults)})), src = 'net';   // what's ours: the Bills Pocket and the Vault hold money already promised to bills (they fill every week and empty on the 1st)
   if (pts.length < 2){
     const cb = sortedCardlog().filter(e => e.type === 'balance' && pd(e.date)).slice(-8).map(e => ({d: pd(e.date), v: -num(e.amount)}));
     if (cb.length >= 2){ pts = cb; src = 'card'; }
@@ -5483,7 +5492,7 @@ function cardIntPanel(){
 }
 
 /* ---------- system health: the page checks itself every time it opens; Claude runs the full check every Monday ---------- */
-const APP_VERSION = '2026.11.12-7';
+const APP_VERSION = '2026.11.12-8';
 function selfCheck(){   // cheap checks on the data, run on every open: things that don't fit, and the weekly tasks that should have run
   const key = `${S._rt}|${iso(today())}`; if (S._hc && S._hc.k === key) return S._hc.v;
   const items = [], t = today(), add = (st2, area, txt) => items.push({st: st2, area, t: txt});
@@ -5718,7 +5727,12 @@ function vTodayIOS(){
   const n = S.canWrite ? payToDo().length : 0;
   const acts = `<div class="ios-acts"><button class="ios-act" data-act="todayOpen" data-v="check"><span class="c">${ico('shield')}</span>Check a purchase</button>${S.canWrite ? `<button class="ios-act" data-act="todayOpen" data-v="log"><span class="c">${ico('plus')}</span>Log a purchase</button><button class="ios-act" data-act="todayOpen" data-v="add"><span class="c">${ico('addin')}</span>Add money</button><button class="ios-act" data-act="tab" data-to="pay"><span class="c">${ico('euro')}</span>Pay${n ? `<span class="badge">${n}</span>` : ''}</button>` : ''}</div>`;
   const AD = fl.configured ? advisor() : null;
-  const adv = AD ? (() => { const md = MODE[AD.mode], f = AD.order[AD.nowIdx]; return `<button type="button" class="ios-adv" data-act="tab" data-to="advisor"><span class="top2"><span>The advisor${P ? ` · stage ${P.cur + 1} of 6` : ''}</span><span class="ios-pill ${md.cls}">${md.label} week</span></span><b>${esc(AD.head)}</b><p>Wants money this week: <b class="inl">${money(AD.allowance)}</b>${f ? ` · Focus: ${esc(f.t)}` : ''}</p></button>`; })() : '';
+  const adv = AD ? (() => { const md = MODE[AD.mode], f = AD.order[AD.nowIdx], sig = signals(), L = trendLight(trendData(), sig), T = trendLines(sig);
+    const line = (cls, mark, x) => `<span class="tline ${cls}"><b class="inl">${mark}</b> ${esc(x.t)}${x.cost ? `<small>${esc(x.cost)}</small>` : ''}</span>`;
+    return `<button type="button" class="ios-adv" data-act="tab" data-to="advisor"><span class="top2"><span>Where we’re heading</span><span class="ios-pill nowrap ${md.cls}">${md.label} week</span></span>
+    <span class="tlhead"><span class="tlight ${L.st}" role="img" aria-label="${esc(L.head)}"><i class="r"></i><i class="a"></i><i class="g"></i></span><b>${esc(L.head)}</b></span>${L.why ? `<p>${esc(L.why)}</p>` : ''}
+    ${T.bad.map(x => line('bad', '✕', x)).join('')}${T.good.map(x => line('ok', '✓', x)).join('')}
+    <p>${P ? `Stage ${P.cur + 1} of 6 · ` : ''}Wants money this week: <b class="inl">${money(AD.allowance)}</b>${f ? ` · Focus: ${esc(f.t)}` : ''}</p></button>`; })() : '';
   const shown = S.todoAll ? rest : rest.slice(0, 4);
   const todoRow = x => { const act = x.act && x.btn && S.canWrite ? `data-act="${x.act}" data-id="${esc(x.id || '')}"` : x.to ? `data-act="tab" data-to="${x.to}"` : ''; return `<button type="button" class="ios-row" ${act}><span class="dot ${x.st}"></span><span class="txt">${esc(x.txt)}</span><span class="end">${x.act && x.btn && S.canWrite ? `<span class="tint">${esc(x.btn)}</span>` : ''}${act ? ico('chev') : ''}</span></button>`; };
   const todoHtml = rest.length ? `<section class="ios-sec"><h2>To do <small>${rest.length}</small></h2><div class="ios-list">${shown.map(todoRow).join('')}</div>${rest.length > 4 ? `<button class="ios-more" data-act="todoAll">${S.todoAll ? 'Show less' : `Show all ${rest.length}`}</button>` : ''}</section>` : '';
@@ -5727,7 +5741,7 @@ function vTodayIOS(){
   const still = items.filter(it => !itemPaid(it)).reduce((a, it) => a + itemAmt(it), 0);
   const outHtml = `<section class="ios-sec"><h2>Going out this week <small>${money(still)} to go</small></h2>${items.length ? `<div class="ios-list">${items.map(outRow).join('')}</div>` : '<div class="ios-list"><div class="ios-row"><span></span><span class="txt">Nothing else goes out this week.</span><span></span></div></div>'}</section>`;
   const wish = wishPanel(AD, {compact: true});
-  return `<div class="stack">${nx.html}${tiles}${acts}${adv}${todoHtml}${outHtml}${wish}<p class="ios-quote">“${esc(todaysShield())}”</p></div>`;
+  return `<div class="stack">${nx.html}${adv}${tiles}${acts}${todoHtml}${outHtml}${wish}<p class="ios-quote">“${esc(todaysShield())}”</p></div>`;
 }
 function iosSheet(){
   if (S.tab !== 'today' || !S.todayOpen) return '';
@@ -5921,26 +5935,45 @@ function patterns(){   // what the purchases and bills say: trends, leaks, impul
   const list = [], cuts = [], sum = l => l.reduce((a, x) => a + num(x.amount), 0), wantsOf = l => l.filter(x => x.kind !== 'need' && x.kind !== 'unknown');
   const byCat = l => { const m = {}; l.forEach(x => { const c = x.kind === 'unknown' ? 'Unexplained' : x.cat || 'Other'; m[c] = (m[c] || 0) + num(x.amount); }); return m; };
   const cn = byCat(now), cp = byCat(prev);
-  if (prev.length >= 3) for (const [c, v] of Object.entries(cn)){ const p = cp[c] || 0; if (v > p * 1.2 && v - p >= 10) list.push({st: 'warn', t: `${c} is up ${money(v - p)} on the 4 weeks before (${money(v)} against ${money(p)}).`}); else if (p > v * 1.2 && p - v >= 10) list.push({st: 'ok', t: `${c} is down ${money(p - v)} on the 4 weeks before.`}); }
+  if (prev.length >= 3) for (const [c, v] of Object.entries(cn)){ const p = cp[c] || 0; if (v > p * 1.2 && v - p >= 10) list.push({st: 'warn', m: (v - p) * 13 / 12, t: `${c} is up ${money(v - p)} on the 4 weeks before (${money(v)} against ${money(p)}).`}); else if (p > v * 1.2 && p - v >= 10) list.push({st: 'ok', m: (p - v) * 13 / 12, t: `${c} is down ${money(p - v)} on the 4 weeks before.`}); }
   const w4 = wantsOf(now), wSum = sum(w4);
   if (w4.length){ const top = Object.entries(byCat(w4)).sort((a, b) => b[1] - a[1])[0]; list.push({st: 'idle', t: `Wants in the last 4 weeks: ${money(wSum)} (about ${money(wSum * 13 / 12)} a month). Biggest: ${top[0]}, ${money(top[1])}.`});
     const wk = sum(w4.filter(x => [5, 6, 0].includes(pd(x.date).getDay()))); if (wSum >= 20 && wk / wSum >= .6) list.push({st: 'warn', t: `${Math.round(wk / wSum * 100)}% of the wants happen Friday to Sunday. Decide the weekend’s spending on Thursday, together.`}); }
-  const slips = now.filter(isSlip); if (slips.length) list.push({st: slips.length >= 3 ? 'bad' : 'warn', t: `${slips.length} slip${slips.length > 1 ? 's' : ''} in 4 weeks (${money(sum(slips))}): ${[...new Set(slips.map(x => x.cat || 'Other'))].join(', ')}. ${slips.filter(x => x.told !== 'before').length ? 'Rory heard after on some: the shield goes first.' : ''}`.trim()});
+  const slips = now.filter(isSlip); if (slips.length) list.push({st: slips.length >= 3 ? 'bad' : 'warn', m: sum(slips) * 13 / 12, t: `${slips.length} slip${slips.length > 1 ? 's' : ''} in 4 weeks (${money(sum(slips))}): ${[...new Set(slips.map(x => x.cat || 'Other'))].join(', ')}. ${slips.filter(x => x.told !== 'before').length ? 'Rory heard after on some: the shield goes first.' : ''}`.trim()});
   const trips = Object.values(now.filter(x => x.kind !== 'unknown').reduce((m, x) => { const k = x.receipt || x.id; (m[k] ||= {...x, amount: 0}).amount += num(x.amount); return m; }, {}));   // one receipt split in lines is still one trip
-  const small = trips.filter(x => num(x.amount) < 10); if (small.length >= 6) list.push({st: 'warn', t: `${small.length} small buys under €10 in 4 weeks add up to ${money(sum(small))}. Little leaks: one planned shop a week stops most of them.`});
+  const small = trips.filter(x => num(x.amount) < 10); if (small.length >= 6) list.push({st: 'warn', m: sum(small) * 13 / 12, t: `${small.length} small buys under €10 in 4 weeks add up to ${money(sum(small))}. Little leaks: one planned shop a week stops most of them.`});
   const shops = {}; trips.forEach(x => { const k = String(x.what || '').trim().split(/[\s/,]+/)[0].toLowerCase(); if (k.length > 2) (shops[k] ||= []).push(x); });
   for (const [k, l] of Object.entries(shops)) if (l.length >= 5) list.push({st: 'warn', t: `${l.length} trips to ${l[0].what.split(/[\s/,]+/)[0]} in 4 weeks (${money(sum(l))}). One bigger shop costs less than many small ones.`});
-  const cardW = now.filter(x => x.paidFrom === 'card' && x.kind !== 'need'); if (cardW.length) list.push({st: 'bad', t: `${cardW.length} want${cardW.length > 1 ? 's' : ''} went on the AIB card (${money(sum(cardW))}). Rule 3: that’s new debt at ${num(st().cardApr) || '?'}% APR.`});
-  const un = spendIn(a8, t).filter(x => x.kind === 'unknown'); if (un.length) list.push({st: 'warn', t: `${money(sum(un))} couldn’t be explained in 8 weeks. Logging on the day keeps it at zero.`});
+  const cardW = now.filter(x => x.paidFrom === 'card' && x.kind !== 'need'); if (cardW.length) list.push({st: 'bad', m: sum(cardW) * 13 / 12, t: `${cardW.length} want${cardW.length > 1 ? 's' : ''} went on the AIB card (${money(sum(cardW))}). Rule 3: that’s new debt at ${num(st().cardApr) || '?'}% APR.`});
+  const un = spendIn(a8, t).filter(x => x.kind === 'unknown'); if (un.length) list.push({st: 'warn', m: sum(un) * 13 / 24, t: `${money(sum(un))} couldn’t be explained in 8 weeks. Logging on the day keeps it at zero.`});
   // what's worth cutting: subscriptions first, then the biggest want categories
   const subs = activeBills().filter(b => ['TV & streaming', 'Apps & cloud', 'Gaming'].includes(billCat(b)) && monthlyEq(b) > 0 && !/licen[cs]e|apple ?care/i.test(b.name));   // the TV licence is the law, AppleCare covers the phone: not subscriptions to cut
   const subsM = subs.reduce((a, b) => a + monthlyEq(b), 0);
-  if (subs.length) list.push({st: subs.length >= 5 ? 'warn' : 'idle', t: `${subs.length} subscriptions cost ${money(subsM)} a month (${money(subsM * 12)} a year). Keep the ones used every week.`});
+  if (subs.length) list.push({st: subs.length >= 5 ? 'warn' : 'idle', m: subsM, t: `${subs.length} subscriptions cost ${money(subsM)} a month (${money(subsM * 12)} a year). Keep the ones used every week.`});
   for (const b of subs.slice().sort((a, b) => monthlyEq(b) - monthlyEq(a)).slice(0, 4)) cuts.push({name: b.name, monthly: monthlyEq(b), why: `${billCat(b)} subscription`});
   for (const [c, v] of Object.entries(byCat(w4)).sort((a, b) => b[1] - a[1]).slice(0, 2)) if (v >= 20) cuts.push({name: `Half of the ${c.toLowerCase()} wants`, monthly: v / 2 * 13 / 12, why: `${money(v)} in the last 4 weeks`});
   for (const c of cuts) c.sooner = daysSooner(c.monthly * 12 / 52);
   { const ep = energyPattern(); if (ep) list.push(ep); }
   return {list, cuts: cuts.sort((a, b) => b.monthly - a.monthly), enough, weeksIn};
+}
+function trendLight(td, sig){   // Today's traffic light: where our money is heading (the trend of what's ours, the card and all debts)
+  const debt = sig.filter(x => ['card', 'debt'].includes(x.k) && x.st !== 'idle');
+  if (td.state === 'none' && !debt.length) return {st: 'idle', head: 'Not enough money checks yet to see the way', why: ''};
+  const st = td.state === 'down' || debt.some(x => x.st === 'bad') ? 'bad' : td.state === 'up' && !debt.some(x => x.st === 'warn') ? 'ok' : 'warn';
+  const net = td.s == null ? [] : [{st: td.state === 'down' ? 'bad' : td.state === 'up' ? 'ok' : 'warn', t: `${td.s < 0 ? 'Worse' : 'Better'} off by about ${money(Math.abs(td.s))} a week`}];
+  const why = net.concat(debt.map(x => ({st: x.st, t: `${x.k === 'card' ? 'the card' : 'all debts'} ${x.val}`}))).filter(x => st === 'warn' || x.st === st).map(x => x.t);
+  return {st, head: {bad: 'Sinking: we’re going the wrong way', warn: 'Standing still: not sinking, not climbing yet', ok: 'Climbing: we’re going the right way'}[st], why: why.length ? `${why.join('; ')}.`.replace(/^./, c => c.toUpperCase()) : ''};
+}
+function trendLines(sig){   // what's sinking us and what's working: the two costliest of each, with what they do to the card's €0 date
+  const P = patterns(), fl = flow(), t = today(), sk = streak(), e = efEstimate(), w = num(PL().efWeekly);
+  const cost = m => { const d = daysSooner(m * 12 / 52); return `≈ ${money(m)} a month${d ? `: the card is clear ${d} days later` : ''}`; };
+  const sinking = P.list.filter(x => (x.st === 'bad' || x.st === 'warn') && x.m > 0);
+  if (fl.configured && fl.free < -.5) sinking.push({st: 'bad', m: -fl.free * 52 / 12, t: `The week’s plan is ${money(-fl.free)} short: the shop, cigarettes and drinks cost more than stays in the Joint account.`});
+  let paid = 0; for (let ws = weekCardPay(iso(weekStartOf(t))) ? weekStartOf(t) : addDays(weekStartOf(t), -7); weekCardPay(iso(ws)); ws = addDays(ws, -7)) paid++;
+  const working = P.list.filter(x => x.st === 'ok' && x.m > 0).sort((a, b) => b.m - a.m).map(x => ({t: x.t}))
+    .concat(sk && sk.days >= 7 ? [{t: `${sk.days} days without a slip.`}] : [], paid >= 2 ? [{t: `The card payment went every week for ${paid} weeks.`}] : [],
+      w > 0 ? [{t: `Emergency fund ${money(e.amount)}, growing ${money(w)} a week.`}] : [], sig.filter(x => x.st === 'ok' && ['card', 'debt', 'buffer', 'month'].includes(x.k)).map(x => ({t: `${x.name}: ${x.val}. ${x.text}`})));
+  return {bad: sinking.sort((a, b) => (a.st === 'bad' ? 0 : 1) - (b.st === 'bad' ? 0 : 1) || b.m - a.m).slice(0, 2).map(x => ({t: x.t, cost: cost(x.m)})), good: working.slice(0, 2)};
 }
 function advisor(){
   const fl = flow(); if (!fl.configured) return null;

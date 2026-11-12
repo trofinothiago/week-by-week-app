@@ -402,6 +402,24 @@ with sync_playwright() as p:
             check(f"{name}: one short line per entry, this week open, older weeks folded, a line opened stays open", r['lines'] and not r['wrong'] and not r['table'] and r.get('kept', True), r)
     step('lists', f_lists)
 
+    # ---- 5c. Today: where we're heading (the kit states the rules itself) ----
+    def f_trend():
+        load(NOW)
+        r = ev("""() => { const c = sortedChecks().pop(), td = trendData(), sig = signals(), L = trendLight(td, sig);
+            const ours = c ? num(c.joint) + num(c.ef) + num(c.aib) - num(c.card) - otherDebtAt(c.date) : null;
+            const debt = sig.filter(x => ['card', 'debt'].includes(x.k) && x.st !== 'idle');
+            const want = td.state === 'none' && !debt.length ? 'idle' : td.state === 'down' || debt.some(x => x.st === 'bad') ? 'bad' : td.state === 'up' && !debt.some(x => x.st === 'warn') ? 'ok' : 'warn';
+            S.tab = 'today'; S.todayOpen = ''; render();
+            const st = [...document.querySelector('#view .stack').children], card = document.querySelector('#view .ios-adv');
+            return {last: td.src === 'net' && td.pts.length ? Math.round(td.pts[td.pts.length - 1].v * 100) / 100 : null, ours: ours == null ? null : Math.round(ours * 100) / 100, src: td.src,
+              light: L.st, want, lit: card ? [...card.querySelectorAll('.tlight')].map(x => x.className) : [], second: st[1] === card,
+              bad: card ? card.querySelectorAll('.tline.bad').length : -1, good: card ? card.querySelectorAll('.tline.ok').length : -1,
+              costs: card ? [...card.querySelectorAll('.tline.bad')].every(x => /a month/.test(x.innerText)) : false}; }""")
+        if r['src'] == 'net': check("the trend counts only what's ours (the Bills Pocket and the Vault are left out)", r['last'] is not None and abs(r['last'] - r['ours']) < .02, r)
+        check("Today: the traffic light is red when we're worse off or a debt is going up, green only when both go the right way", r['light'] == r['want'] and r['lit'] == [f"tlight {r['want']}"], r)
+        check("Today: where we're heading sits right under what needs us now, with at most 2 lines sinking us (each with its cost) and 2 working", r['second'] and 0 <= r['bad'] <= 2 and 0 <= r['good'] <= 2 and r['costs'], r)
+    step('trend', f_trend)
+
     # ---- 5b. two money checks on the same day: the later one is the one that counts ----
     def f_sameday():
         load(NOW)
