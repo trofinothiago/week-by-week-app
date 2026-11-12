@@ -1525,24 +1525,6 @@ function gaugeSVG(td, C){
     <text x="${cx + r}" y="${cy + 20}" text-anchor="middle" font-size="11" fill="${C.muted}" font-family="IBM Plex Sans, sans-serif">Rising</text>
     ${needle}</svg>`;
 }
-function lineSVG(pts, C){
-  if (pts.length < 2) return '';
-  const W = 680, H = 210, L = 70, R = 18, T = 14, B = 30;
-  const vs = pts.map(p => p.v); let lo = Math.min(0, ...vs), hi = Math.max(0, ...vs); if (hi === lo) hi = lo + 1;
-  const pad = (hi - lo) * .12; if (lo < 0) lo -= pad; hi += pad;
-  const t0 = pts[0].d, span = Math.max(1, dayDiff(t0, pts[pts.length - 1].d));
-  const x = d => L + (W - L - R) * dayDiff(t0, d) / span, y = v => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
-  const line = pts.map((p, i) => `${i ? 'L' : 'M'}${x(p.d).toFixed(1)},${y(p.v).toFixed(1)}`).join('');
-  const ticks = [lo < 0 ? lo : null, 0, Math.max(...vs) > 0 ? hi : null].filter(v => v != null);
-  const last = pts[pts.length - 1];
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Net position from ${money(pts[0].v)} to ${money(last.v)}">
-    ${ticks.map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="${v === 0 ? C.muted : C.rule}" stroke-width="1"${v === 0 ? ' stroke-dasharray="4 4"' : ''}/><text x="${L - 8}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end" font-size="11" fill="${C.muted}" font-family="IBM Plex Mono, monospace">${esc(money(Math.round(v)).replace('.00', ''))}</text>`).join('')}
-    <path d="${line}" fill="none" stroke="${C.line}" stroke-width="2.2" stroke-linejoin="round"/>
-    ${pts.map(p => `<circle cx="${x(p.d).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="${p === last ? 5.5 : 4}" fill="${C.line}"><title>${esc(dlong(p.d))}: ${esc(money(p.v))}</title></circle>`).join('')}
-    <text x="${L}" y="${H - 8}" font-size="11" fill="${C.muted}" font-family="IBM Plex Mono, monospace">${esc(dshort(pts[0].d))}</text>
-    <text x="${W - R}" y="${H - 8}" text-anchor="end" font-size="11" fill="${C.muted}" font-family="IBM Plex Mono, monospace">${esc(dshort(last.d))} · ${esc(money(last.v))}</text>
-  </svg>`;
-}
 function trendSummary(td){
   if (td.s == null) return 'The meter needs two money checks, about a week apart.';
   if (td.state === 'up') return td.src === 'card' ? 'The card balance is coming down.' : 'You are better off each week: more saved, less owed.';
@@ -1551,19 +1533,10 @@ function trendSummary(td){
 }
 const sigChip = s => `<span class="chip ${s}">${s === 'ok' ? '✓ Good' : s === 'warn' ? '! Watch' : s === 'bad' ? '✕ Act' : '… Waiting'}</span>`;
 const sigRows = list => list.length ? `<div class="sigs">${list.map(x => `<div class="sig">${sigChip(x.st)}<div><b>${esc(x.name)}</b> <span class="mono">${esc(x.val)}</span><p class="mut">${esc(x.text)}</p></div></div>`).join('')}</div>` : '';   // the trend's signals, one row each
-function vTrend(){
-  const td = trendData(), sig = signals(), ts = TSTATE[td.state], chks = sortedChecks(), last = chks[chks.length - 1];
-  const meter = `<section class="panel"><header><h2>Trend meter</h2><span class="mut" style="font-size:.85rem">${td.src === 'card' ? 'From the card balance only, until there are two money checks' : td.pts.length >= 2 ? `Last ${td.pts.length} money checks, about ${td.weeks} week${td.weeks === 1 ? '' : 's'}` : ''}</span></header>
-    <div class="meter">${gaugeSVG(td, LIVE_C)}<div class="meterinfo"><span class="chip ${ts.cls}" style="font-size:.85rem">${ts.icon} ${ts.label}</span>
-      <b class="mono">${td.s == null ? '—' : `${td.s >= 0 ? '+' : '−'}${money(Math.abs(td.s))} a week`}</b>
-      <p>${trendSummary(td)}</p>
-      ${last ? `<p class="mut" style="font-size:.88rem">Net position on ${dlong(pd(last.date))}: <b class="mono">${money(checkNet(last))}</b></p>` : ''}</div></div>
-    <div class="advice"><span class="label">What to do this week</span><p>${esc(advice(td, sig))}</p></div></section>`;
-  const sigHtml = `<section class="panel"><header><h2>Signals</h2><span class="mut" style="font-size:.85rem">Why the meter reads what it reads</span></header>${sigRows(sig) || '<p class="mut">Signals appear once there are bills, card balances and purchases in the system.</p>'}</section>`;
-  const chart = chks.length >= 2 ? `<section class="panel"><header><h2>Net position over time</h2><span class="mut" style="font-size:.85rem">Everything in the accounts minus what the card owes</span></header><div class="chartwrap">${lineSVG(chks.map(c => ({d: pd(c.date), v: checkNet(c)})), LIVE_C)}</div></section>` : '';
-  const table = chks.length ? `<section class="panel"><header><h2>Money checks</h2></header><div class="tablewrap"><table><thead><tr><th>Date</th><th class="r">Joint</th><th class="r">Bills Pocket</th><th class="r">Vaults</th><th class="r">Emergency</th><th class="r">AIB savings</th><th class="r">Card owes</th><th class="r">Net</th><th>Adds up?</th><th></th></tr></thead><tbody>
-    ${chks.slice().reverse().map(c => `<tr><td class="num">${dshort(pd(c.date))}</td>${['joint', 'bills', 'vaults', 'ef', 'aib', 'card'].map(k => `<td class="r num">${has(c[k]) ? money(c[k]) : '—'}</td>`).join('')}<td class="r num"><b>${money(checkNet(c))}</b></td><td>${(() => { const r = recFor(c); if (!r) return '<span class="mut">—</span>'; const x = recState(r); return `<span class="chip ${x}">${x === 'ok' ? '✓ Yes' : x === 'warn' ? `${money(Math.abs(r.gap))} explained` : `✕ ${r.gap < 0 ? '−' : '+'}${money(Math.abs(r.gap))}`}</span>`; })()}</td><td>${S.canWrite ? `<button class="btn small danger" data-act="chkDel" data-id="${esc(c.id)}">Delete</button>` : ''}</td></tr>`).join('')}</tbody></table></div></section>` : '';
-  return `<div class="stack">${meter}${sigHtml}${chart}${table}</div>`;
+function checksList(){   // every money check, newest first, with whether it added up and Delete (Week, step 2)
+  const chks = sortedChecks();
+  return chks.length ? `<details><summary>Every money check (${chks.length})</summary><div class="tablewrap" style="margin-top:10px"><table><thead><tr><th>Date</th><th class="r">Joint</th><th class="r">Bills Pocket</th><th class="r">Vaults</th><th class="r">Emergency</th><th class="r">AIB savings</th><th class="r">Card owes</th><th class="r">Net</th><th>Adds up?</th><th></th></tr></thead><tbody>
+    ${chks.slice().reverse().map(c => `<tr><td class="num">${dshort(pd(c.date))}</td>${['joint', 'bills', 'vaults', 'ef', 'aib', 'card'].map(k => `<td class="r num">${has(c[k]) ? money(c[k]) : '—'}</td>`).join('')}<td class="r num"><b>${money(checkNet(c))}</b></td><td>${(() => { const r = recFor(c); if (!r) return '<span class="mut">—</span>'; const x = recState(r); return `<span class="chip ${x}">${x === 'ok' ? '✓ Yes' : x === 'warn' ? `${money(Math.abs(r.gap))} explained` : `✕ ${r.gap < 0 ? '−' : '+'}${money(Math.abs(r.gap))}`}</span>`; })()}</td><td>${S.canWrite ? `<button class="btn small danger" data-act="chkDel" data-id="${esc(c.id)}">Delete</button>` : ''}</td></tr>`).join('')}</tbody></table></div></details>` : '';
 }
 async function chkSave(){
   const f = S.f.chk, r2 = v => Math.round(num(v) * 100) / 100;
@@ -1894,7 +1867,6 @@ function pocketPanel(opts = {}){   // Plan → Budget: will every bill find its 
 /* ---------- month-to-month ---------- */
 const fMon = new Intl.DateTimeFormat('en-IE', {month:'long', year:'numeric'});
 const mKey = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
-const mFromKey = k => /^\d{4}-\d{2}$/.test(k || '') ? new Date(+k.slice(0, 4), +k.slice(5, 7) - 1, 1) : monthStart(today());
 function monthStats(m0, uptoDay){
   const a = monthStart(m0), full = monthEnd(m0);
   const z = uptoDay ? new Date(a.getFullYear(), a.getMonth(), Math.min(uptoDay, full.getDate())) : full;
@@ -1908,33 +1880,12 @@ function monthStats(m0, uptoDay){
   return {a, z, sp, cats, who, total: sumAmt(sp), wants: sumAmt(sp.filter(x => x.kind !== 'need')), slips: sp.filter(isSlip).length,
     card: bal ? num(bal.amount) : null, debt: known ? debtAt(zi) : null, net: chk ? checkNet(chk) : null, n: sp.length};
 }
-function deltaChip(now, prev, goodWhenDown, fmt){
-  if (now == null || prev == null) return '<span class="mut">no comparison yet</span>';
-  const d = now - prev; if (Math.abs(d) < 0.005) return '<span class="mut">same as before</span>';
-  const good = goodWhenDown ? d < 0 : d > 0;
-  const pct = prev ? ` (${d > 0 ? '+' : '−'}${Math.abs(Math.round(d / Math.abs(prev) * 100))}%)` : '';
-  return `<span class="${good ? 'pos' : 'neg'}">${d > 0 ? '▲' : '▼'} ${fmt ? fmt(Math.abs(d)) : money(Math.abs(d))}${pct}</span>`;
-}
 function catPairs(cur, prev, limit){
   const keys = Array.from(new Set(Object.keys(cur.cats).concat(Object.keys(prev.cats)))).sort((x, y) => (cur.cats[y] || 0) - (cur.cats[x] || 0) || (prev.cats[y] || 0) - (prev.cats[x] || 0)).slice(0, limit || 12);
   if (!keys.length) return '<p class="mut">No purchases logged in either month.</p>';
   const max = Math.max(1, ...keys.map(k => Math.max(cur.cats[k] || 0, prev.cats[k] || 0)));
   return `<div class="pairs"><div class="pkey"><span><i class="sw" style="--c:var(--s1)"></i>${esc(fMon.format(cur.a))}</span><span><i class="sw" style="--c:var(--muted)"></i>${esc(fMon.format(prev.a))}</span></div>
     ${keys.map(k => { const c = cur.cats[k] || 0, p = prev.cats[k] || 0; return `<div class="prow"><span class="pl">${esc(k)}</span><span class="pbars"><span class="gbar"><i style="width:${(c / max * 100).toFixed(1)}%;background:var(--s1)"></i></span><span class="gbar"><i style="width:${(p / max * 100).toFixed(1)}%;background:var(--muted)"></i></span></span><span class="pv mono">${money(c)}<br><small class="mut">${money(p)}</small></span></div>`; }).join('')}</div>`;
-}
-function whoMonthsSVG(stats){
-  const W = 680, H = 210, L = 60, R = 10, T = 12, B = 30, n = stats.length, gap = 14, bw = (W - L - R) / n - gap;
-  const max = Math.max(1, ...stats.map(s => s.total)) * 1.08, y = v => T + (H - T - B) * (1 - v / max);
-  const ticks = [0, max / 1.08 / 2, max / 1.08];
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Spending per month by person">
-    ${yGrid(ticks, y, L, W, R)}
-    ${stats.map((s, i) => { const x = L + i * (bw + gap) + gap / 2; let acc = 0;
-      const rects = ['both', 'rory', 'thiago'].filter(k => s.who[k] > 0).map(k => { const y0 = y(acc), y1 = y(acc + s.who[k]); acc += s.who[k]; return `<rect x="${x.toFixed(1)}" y="${y1.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0, y0 - y1 - 2).toFixed(1)}" fill="${WHO_C[k]}" rx="2"/>`; }).join('');
-      const other = s.total - acc; const restR = other > 0.01 ? `<rect x="${x.toFixed(1)}" y="${y(acc + other).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0, y(acc) - y(acc + other) - 2).toFixed(1)}" fill="var(--muted)" rx="2"/>` : '';
-      return `<g><title>${esc(fMon.format(s.a))}: ${esc(money(s.total))} (Thiago ${esc(money(s.who.thiago))}, Rory ${esc(money(s.who.rory))}, Together ${esc(money(s.who.both))})</title>${rects}${restR}
-        <text x="${(x + bw / 2).toFixed(1)}" y="${H - 10}" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="IBM Plex Mono, monospace">${esc(fMY.format(s.a))}</text>
-        ${s.total ? `<text x="${(x + bw / 2).toFixed(1)}" y="${(y(s.total) - 4).toFixed(1)}" text-anchor="middle" font-size="10.5" fill="var(--ink)" font-family="IBM Plex Mono, monospace">${esc(money(Math.round(s.total)).replace('.00', ''))}</text>` : ''}</g>`; }).join('')}
-  </svg>`;
 }
 function debtMonthsSVG(stats){
   const pts = stats.filter(s => s.debt != null || s.card != null);
@@ -1952,36 +1903,6 @@ function monthCompare(m0){
   const cur0 = monthStart(today()), isCur = mKey(m0) === mKey(cur0), upto = isCur ? today().getDate() : null;
   const cur = monthStats(m0, upto), prev = monthStats(new Date(m0.getFullYear(), m0.getMonth() - 1, 1), upto);
   return {cur, prev, isCur, upto};
-}
-function vMonths(){
-  const m0 = mFromKey(S.monthView), cur0 = monthStart(today());
-  const {cur, prev, isCur, upto} = monthCompare(m0);
-  const six = Array.from({length: 6}, (_, i) => monthStats(new Date(m0.getFullYear(), m0.getMonth() - 5 + i, 1), null));
-  const tile = (label, val, chip) => `<div class="gt"><span class="label">${label}</span><b>${val}</b><small>${chip}</small></div>`;
-  return `<div class="stack">
-    <section class="panel"><header><div class="weeknav"><button class="btn small" data-act="mPrev" aria-label="Previous month">←</button><b>${esc(fMon.format(m0))}</b><button class="btn small" data-act="mNext" aria-label="Next month"${isCur ? ' disabled' : ''}>→</button>${isCur ? '' : '<button class="linkbtn" data-act="mNow">This month</button>'}</div>
-      <span class="mut" style="font-size:.85rem">${isCur ? `Days 1–${upto} compared with days 1–${upto} of ${esc(fMon.format(prev.a))}` : `Compared with ${esc(fMon.format(prev.a))}`}</span></header>
-      <div class="gtiles">
-        ${tile('Spent', money(cur.total), deltaChip(cur.total, prev.total, true))}
-        ${tile('Wants', money(cur.wants), deltaChip(cur.wants, prev.wants, true))}
-        ${tile('Slips', String(cur.slips), deltaChip(cur.slips, prev.slips, true, v => String(Math.round(v))))}
-        ${tile('All debts at the end', cur.debt != null ? money(cur.debt) : '—', deltaChip(cur.debt, prev.debt, true))}
-      </div>
-      <div class="gtiles">
-        ${tile('Card owes at the end', cur.card != null ? money(cur.card) : '—', deltaChip(cur.card, prev.card, true))}
-        ${tile('Net position', cur.net != null ? money(cur.net) : '—', cur.net != null ? deltaChip(cur.net, prev.net, false) : 'needs a money check')}
-        ${tile('Thiago spent', money(cur.who.thiago), deltaChip(cur.who.thiago, prev.who.thiago, true))}
-        ${tile('Rory spent', money(cur.who.rory), deltaChip(cur.who.rory, prev.who.rory, true))}
-      </div></section>
-    <section class="panel"><header><h2>Spending by category</h2><span class="mut" style="font-size:.85rem">${esc(fMon.format(cur.a))} against ${esc(fMon.format(prev.a))}</span></header>${catPairs(cur, prev)}</section>
-    <section class="panel"><header><h2>Six months of spending</h2><span class="mut" style="font-size:.85rem">Hover a column for the split</span></header>
-      <div class="chartwrap">${whoMonthsSVG(six)}</div>
-      <div class="clegend" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr))">${['thiago', 'rory', 'both'].map(k => `<span><i class="sw" style="--c:${WHO_C[k]}"></i>${WHO[k]}</span>`).join('')}</div></section>
-    ${debtMonthsSVG(six) ? `<section class="panel"><header><h2>Debt at the end of each month</h2></header><div class="chartwrap">${debtMonthsSVG(six)}</div>
-      <div class="clegend" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))"><span><i class="sw" style="--c:var(--s4)"></i>All debts</span><span><i class="sw" style="--c:var(--s5)"></i>AIB card</span></div></section>` : ''}
-    <section class="panel"><header><h2>Month by month</h2></header><div class="tablewrap"><table><thead><tr><th>Month</th><th class="r">Spent</th><th class="r">Wants</th><th class="r">Slips</th><th class="r">Thiago</th><th class="r">Rory</th><th class="r">Together</th><th class="r">Card at end</th><th class="r">All debts</th><th class="r">Net</th></tr></thead><tbody>
-      ${six.slice().reverse().map(s => `<tr><td>${esc(fMY.format(s.a))}</td><td class="r num">${money(s.total)}</td><td class="r num">${money(s.wants)}</td><td class="r num">${s.slips}</td><td class="r num">${money(s.who.thiago)}</td><td class="r num">${money(s.who.rory)}</td><td class="r num">${money(s.who.both)}</td><td class="r num">${s.card != null ? money(s.card) : '—'}</td><td class="r num">${s.debt != null ? money(s.debt) : '—'}</td><td class="r num">${s.net != null ? money(s.net) : '—'}</td></tr>`).join('')}</tbody></table></div></section>
-  </div>`;
 }
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 function transferSteps(){
@@ -2550,7 +2471,9 @@ function vSpending(){
   const monthList = S.spending.filter(x => pd(x.date) && pd(x.date) >= mStart);
   const whoPanel = `<section class="panel"><header><h2>Who spent what</h2><div class="seg" role="group">${[['week', 'This week'], ['month', new Intl.DateTimeFormat('en-IE', {month:'long'}).format(today())]].map(([k, l]) => `<button type="button" data-act="seg" data-form="view" data-key="who" data-val="${k}" aria-pressed="${(S.f.view?.who || 'week') === k}">${l}</button>`).join('')}</div></header>
     ${whoHtml((S.f.view?.who || 'week') === 'month' ? monthList : thisWeek, {empty: 'Nothing logged yet.'})}</section>`;
-  return `<div class="stack">${form}${whoPanel}${sumHtml}${listHtml}</div>`;
+  const mc = monthCompare(monthStart(today()));
+  const catHtml = `<section class="panel"><header><h2>Spending by category</h2><span class="mut" style="font-size:.85rem">Days 1–${mc.upto} of ${esc(fMon.format(mc.cur.a))} against the same days of ${esc(fMon.format(mc.prev.a))}</span></header>${catPairs(mc.cur, mc.prev)}</section>`;
+  return `<div class="stack">${form}${catHtml}${whoPanel}${sumHtml}${listHtml}</div>`;
 }
 
 function checkVerdict(){
@@ -5834,6 +5757,8 @@ function vBalance(){
   const ss = sharedSeries(), last = ss.future[ss.future.length - 1];
   const past = `<section class="panel"><header><h2>Before, now and next</h2><span class="mut" style="font-size:.85rem">Our shared money: accounts minus debts</span></header>
     <h3>Each month’s result</h3><div class="chartwrap">${resultColsSVG(six.map(x => ({a: x.a, v: x.v, proj: x.proj})), C)}</div><p class="mut" style="font-size:.85rem">Green: more came in than went out. Red: the month ended in the red. * projected to the end of the month.</p>
+    ${(() => { const st6 = Array.from({length: 6}, (_, i) => monthStats(new Date(today().getFullYear(), today().getMonth() - 5 + i, 1), null)), svg = debtMonthsSVG(st6); return svg ? `<h3>Debt at the end of each month</h3><div class="chartwrap">${svg}</div>
+      <div class="clegend" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))"><span><i class="sw" style="--c:var(--s4)"></i>All debts</span><span><i class="sw" style="--c:var(--s5)"></i>AIB card</span></div>` : ''; })()}
     <h3>Where it’s heading</h3>${ss.past.length + ss.future.length >= 2 ? `<div class="chartwrap">${lineChartSVG(ss.past.length ? ss.past : [{d: today(), v: B.shared}], ss.future, C, {label: 'Shared money over time', color: C.s1, endLabel: last ? shortMoney(last.v) : ''})}</div>
       <p class="mut" style="font-size:.85rem">The solid line is from our money checks. The faint line follows the plan: debts paid down, then the emergency fund growing. It assumes the free money each week gets spent.</p>` : '<p class="mut">Two money checks draw the line.</p>'}
     ${(() => { if (!flow().configured) return ''; const ms = planMilestones(planState()).slice(0, 5); return ms.length ? `<div class="ledger">${ms.map(m => `<div class="lrow"><span class="d">${esc(fMYL.format(m.d))}</span><span class="n">${esc(m.t)}</span><span class="a"></span></div>`).join('')}</div>` : ''; })()}</section>`;
@@ -5863,8 +5788,8 @@ async function asSave(){
 
 /* ---------- navigation: 5 places ---------- */
 const NAV = [['today', 'Today'], ['week', 'Week'], ['pay', 'Pay'], ['money', 'Money'], ['plan', 'Plan'], ['settings', 'Settings']];
-const SUBS = {money: [['balance', 'Balance'], ['bills', 'Bills'], ['energy', 'Electricity'], ['debts', 'Debts'], ['spending', 'Spending'], ['transfers', 'Transfers']], plan: [['plan', 'Plan'], ['advisor', 'Advisor'], ['budget', 'Budget'], ['compare', 'Compare'], ['ready', 'Ready'], ['trends', 'Trends'], ['million', '€1M']], settings: [['setup', 'Setup'], ['rules', 'Rules'], ['health', 'System'], ['history', 'History']]};
-const ROUTE = {compare: ['plan', 'compare'], ready: ['plan', 'ready'], prep: ['plan', 'ready'], advisor: ['plan', 'advisor'], wishlist: ['plan', 'advisor'], payments: ['pay'], payment: ['pay'], million: ['plan', 'million'], balance: ['money', 'balance'], overview: ['today'], shield: ['today'], report: ['week'], transfers: ['money', 'transfers'], wise: ['money', 'transfers'], trend: ['plan', 'trends'], months: ['plan', 'trends'], budget: ['plan', 'budget'], bills: ['money', 'bills'], review: ['plan', 'budget'], energy: ['money', 'energy'], electricity: ['money', 'energy'], card: ['money', 'debts'], debts: ['money', 'debts'], spending: ['money', 'spending'], history: ['settings', 'history'], setup: ['settings', 'setup'], rules: ['settings', 'rules'], system: ['settings', 'health'], health: ['settings', 'health']};
+const SUBS = {money: [['balance', 'Balance'], ['bills', 'Bills'], ['energy', 'Electricity'], ['debts', 'Debts'], ['spending', 'Spending'], ['transfers', 'Transfers']], plan: [['plan', 'Plan'], ['advisor', 'Advisor'], ['budget', 'Budget'], ['compare', 'Compare'], ['ready', 'Ready'], ['million', '€1M']], settings: [['setup', 'Setup'], ['rules', 'Rules'], ['health', 'System'], ['history', 'History']]};
+const ROUTE = {compare: ['plan', 'compare'], ready: ['plan', 'ready'], prep: ['plan', 'ready'], advisor: ['plan', 'advisor'], wishlist: ['plan', 'advisor'], payments: ['pay'], payment: ['pay'], million: ['plan', 'million'], balance: ['money', 'balance'], overview: ['today'], shield: ['today'], report: ['week'], transfers: ['money', 'transfers'], wise: ['money', 'transfers'], budget: ['plan', 'budget'], bills: ['money', 'bills'], review: ['plan', 'budget'], energy: ['money', 'energy'], electricity: ['money', 'energy'], card: ['money', 'debts'], debts: ['money', 'debts'], spending: ['money', 'spending'], history: ['settings', 'history'], setup: ['settings', 'setup'], rules: ['settings', 'rules'], system: ['settings', 'health'], health: ['settings', 'health']};
 function normTab(){ const r = ROUTE[S.tab]; if (r){ S.tab = r[0]; if (r[1]) S.sub[r[0]] = r[1]; } if (!NAV.some(n => n[0] === S.tab)) S.tab = 'today'; }
 function go(t){ if (t === 'plan'){ S.tab = 'plan'; S.sub.plan = 'plan'; } else { S.tab = t; normTab(); } S.err = ''; render(); window.scrollTo({top: 0}); }
 const subnav = k => `<div class="subnav" role="tablist" aria-label="Sections">${SUBS[k].map(([v, l]) => `<button type="button" role="tab" data-act="sub" data-k="${k}" data-v="${v}" aria-selected="${S.sub[k] === v}">${l}</button>`).join('')}</div>`;
@@ -6185,7 +6110,7 @@ function vTransfersPage(){
 function checkFormPanel(ws){
   const isCur = iso(ws) === iso(weekStartOf(today()));
   const ck = sortedChecks().filter(c => inWeek(c.date, ws)).pop(), r = ck ? recFor(ck) : null;
-  if (!isCur) return `<section class="panel"><header><h2><span class="stepn">2</span> Money check</h2></header>${ck ? `<p>Done on ${dlong(pd(ck.date))}: net position <b class="mono">${money(checkNet(ck))}</b>.</p>${r ? recHTML(r, {rows: true}) : ''}` : '<p class="mut">No money check that week.</p>'}</section>`;
+  if (!isCur) return `<section class="panel"><header><h2><span class="stepn">2</span> Money check</h2></header>${ck ? `<p>Done on ${dlong(pd(ck.date))}: net position <b class="mono">${money(checkNet(ck))}</b>.</p>${r ? recHTML(r, {rows: true}) : ''}` : '<p class="mut">No money check that week.</p>'}${checksList()}</section>`;
   const f = S.f.chk, typed = CHK_KEYS.some(k => has(f[k]));
   const form = S.canWrite ? `<p class="mut">Open Revolut and the AIB app and copy the balances. Fill every box: that’s how the system checks every euro is accounted for.</p>
     <div class="form">${field('chk', 'date', 'Date', {type:'date'})}${field('chk', 'joint', 'Joint account (€)', {money:true, ph:'240.00', hint:'Main balance'})}${field('chk', 'bills', 'Bills Pocket (€)', {money:true, ph:'410.00'})}${field('chk', 'vaults', 'All bill Vaults (€)', {money:true, ph:'190.00'})}${field('chk', 'ef', 'Emergency fund (€)', {money:true, ph:'0.00', hint: efAer() > 0 ? 'Savings balance, interest included' : ''})}${field('chk', 'aib', 'AIB savings (€)', {money:true, ph:'100.00'})}${field('chk', 'card', 'AIB card: balance in the app (€)', {money:true, ph:'2038.02', hint:'The big number on the card screen'})}${enOn() ? field('chk', 'kwh', 'Electricity: kWh so far', {money:true, ph: '29.01', hint: 'Optional · Energia app, up to yesterday'}) : ''}</div>
@@ -6194,7 +6119,7 @@ function checkFormPanel(ws){
     ${typed ? `<p>Net position: <b class="mono">${money(checkNet(has(f.card) ? {...f, card: cardOwedFrom('chk', 'card').owed} : f))}</b> <span class="mut">(everything in the accounts minus what the card owes)</span></p>` : ''}
     ${S.err && S.errAt === 'chk' ? `<p class="err">${esc(S.err)}</p>` : ''}
     <div class="actions"><button class="btn strong" data-act="chkSave">${ck ? 'Save another check' : 'Save money check'}</button></div>` : '';
-  return `<section class="panel"><header><h2><span class="stepn">2</span> Money check</h2>${ck ? `<span class="chip ok">✓ Done ${dshort(pd(ck.date))}</span>` : '<span class="chip idle">Not done yet</span>'}</header>${form}${unexplainedForm()}</section>${vRecon()}`;
+  return `<section class="panel"><header><h2><span class="stepn">2</span> Money check</h2>${ck ? `<span class="chip ok">✓ Done ${dshort(pd(ck.date))}</span>` : '<span class="chip idle">Not done yet</span>'}</header>${form}${unexplainedForm()}${checksList()}</section>${vRecon()}`;
 }
 function vWeek(){
   const cur = weekStartOf(today()), ws = S.reportWeek ? pd(S.reportWeek) : cur, isCur = iso(ws) === iso(cur), fl = flow(), wsI = iso(ws), wk = S.weeks[wsI] || {};
@@ -6215,7 +6140,7 @@ function vWeek(){
 
 /* ---------- Money, Plan, Settings ---------- */
 function vMoney(){ const k = S.sub.money; return `${subnav('money')}${k === 'debts' ? vCard() : k === 'spending' ? vSpending() : k === 'bills' ? vBills() : k === 'energy' ? vEnergy() : k === 'transfers' ? vTransfersPage() : vBalance()}`; }
-function vPlanTab(){ const k = S.sub.plan; return `${subnav('plan')}${k === 'advisor' ? vAdvisor() : k === 'million' ? vMillion() : k === 'budget' ? vBudget() : k === 'compare' ? vCompare() : k === 'ready' ? vReady() : k === 'trends' ? `<div class="stack">${vTrend()}${vMonths()}</div>` : vPlan()}`; }
+function vPlanTab(){ const k = S.sub.plan; return `${subnav('plan')}${k === 'advisor' ? vAdvisor() : k === 'million' ? vMillion() : k === 'budget' ? vBudget() : k === 'compare' ? vCompare() : k === 'ready' ? vReady() : vPlan()}`; }
 function factsPanel(){   // the Irish rules and rates the system uses, with where each one comes from
   const age = dayDiff(pd(factsCheckedOn()), today()), live = !!(S.facts && S.facts.checkedOn);
   const val = (k, f) => k === 'bankHolidays' ? (() => { const n = nextHolidays(today(), 370)[0]; return n ? `next ${dshort(n.d)}` : ''; })() : k === 'pia' ? `opens ${dshort(pd(f.opens))}` : k === 'christmasBonus' ? `week of ${dshort(pd(f.week))}` : ['illnessBenefit'].includes(k) ? money(f.v).replace('.00', '') : k === 'degiro' ? money(f.v) : `${f.v}${f.unit && f.unit.startsWith('%') ? '%' : f.unit || ''}`;
@@ -6708,9 +6633,6 @@ document.addEventListener('click', async e => {
     case 'wkPrev': { const ws = S.reportWeek ? pd(S.reportWeek) : weekStartOf(today()); S.reportWeek = iso(addDays(ws, -7)); render(); break; }
     case 'wkNext': { const ws = S.reportWeek ? pd(S.reportWeek) : weekStartOf(today()); const n = addDays(ws, 7); S.reportWeek = n > weekStartOf(today()) ? null : iso(n); render(); break; }
     case 'wkNow': S.reportWeek = null; render(); break;
-    case 'mPrev': { const m = mFromKey(S.monthView); S.monthView = mKey(new Date(m.getFullYear(), m.getMonth() - 1, 1)); render(); break; }
-    case 'mNext': { const m = mFromKey(S.monthView), n = new Date(m.getFullYear(), m.getMonth() + 1, 1); S.monthView = n >= monthStart(today()) ? null : mKey(n); render(); break; }
-    case 'mNow': S.monthView = null; render(); break;
     case 'wkNote': { const ws = S.reportWeek || iso(weekStartOf(today())); const v = S.f.note[ws]; if (v == null) { toast('Nothing changed'); break; } await weekUpdate(ws, {note: String(v)}); delete S.f.note[ws]; toast('Note saved'); break; }
     case 'pdf': if (!S.busy) makePdf(); break;
     case 'decSave': { if (!needDb()) break; const t = String(S.f.dec.text || '').trim(); if (!t) { toast('Write the decision first.'); break; } await logChange('decision', t); S.f.dec.text = ''; toast('Saved to history'); render(); break; }

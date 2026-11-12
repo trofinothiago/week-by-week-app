@@ -34,7 +34,7 @@ def check(name, ok, info=''):
     results.append({'name': name, 'ok': bool(ok), 'info': str(info)[:400]}); print(('PASS ' if ok else 'FAIL ') + name + (f'  [{str(info)[:200]}]' if info != '' else ''), flush=True)
 
 TABS = [('today', None), ('week', None), ('pay', None)] + [('money', x) for x in ['balance', 'bills', 'energy', 'debts', 'spending', 'transfers']] + \
-       [('plan', x) for x in ['plan', 'advisor', 'budget', 'compare', 'ready', 'trends', 'million']] + [('settings', x) for x in ['setup', 'rules', 'health', 'history']]
+       [('plan', x) for x in ['plan', 'advisor', 'budget', 'compare', 'ready', 'million']] + [('settings', x) for x in ['setup', 'rules', 'health', 'history']]
 # phone fit: nothing past the edge, squeezed into a narrow column, or drawn on top of other text
 PROBE = r"""() => {
   const W = document.documentElement.clientWidth, out = [];
@@ -220,6 +220,12 @@ with sync_playwright() as p:
     check('Setup (cleaner): the two long explanations are gone; the setup form and the backup stay', hw['gone'] and hw['setup'], hw)
     tp = ev("() => { S.tab = 'money'; S.sub.money = 'transfers'; render(); const t = document.getElementById('view').innerText, r = {gone: !/Set up in Revolut and AIB|How money moves between our accounts/.test(t), kept: ['Add money', 'Move money', 'Coming up', 'Transfers to Brazil'].every(x => t.includes(x))}; S.tab = 'week'; render(); return r; }")
     check('Transfers (cleaner): the set-up table and the money map are gone; Add money, moves, money before a bill and Brazil stay', tp['gone'] and tp['kept'], tp)
+    tr5 = ev("""() => { const r = {}; S.tab = 'plan'; render(); r.noTrends = !document.querySelector('[data-act=sub][data-v=trends]');
+      S.tab = 'week'; render(); const d = [...document.querySelectorAll('#view details')].find(x => /Every money check/.test(x.querySelector('summary').innerText)); r.checks = !!d && !d.open && (!S.canWrite || !!d.querySelector('[data-act=chkDel]'));
+      S.tab = 'money'; S.sub.money = 'spending'; render(); r.cats = document.getElementById('view').innerText.includes('Spending by category');
+      S.sub.money = 'balance'; render(); r.debt = document.getElementById('view').innerText.includes('Debt at the end of each month') || sortedChecks().length < 2;
+      S.tab = 'week'; render(); return r; }""")
+    check('Trends (cleaner): gone from Plan; every money check (with Delete) folds into Week, debt by month into Balance, categories into Spending', all(tr5.values()), tr5)
     check('System (cleaner): the self-check stays; Claude’s check is one line with the detail folded; only ideas waiting show, keeping their number; What’s new folded', sy['one'] and sy['three'] and not sy['built'] and sy['rowHidden'] and sy['newsFolded'] and sy['selfCheck'] and sy['noIdeas'], sy)
     ev("() => render()")
     ev("() => { S.canWrite = false; render(); }"); rv = view()
