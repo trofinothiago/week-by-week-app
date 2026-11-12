@@ -3317,16 +3317,22 @@ function planNextLine(P){
 function vPlan(){
   const s = st(), fl = flow();
   if (!fl.configured) return `<div class="stack"><section class="panel"><header><h2>Our plan</h2></header>${emptyBox('Add both incomes in Settings, then bills, debts and the card balance. The plan is worked out from them.', 'goSetup', 'Open Settings')}</section></div>`;
-  const P = planState(), sim = P.sim, T = P.T, p = PL(), cs = cardState(), cw = num(s.cardWeekly);
-  const head = `<section class="panel"><header><h2>Our plan</h2><span class="mut" style="font-size:.85rem">Worked out from everything in the system, every time something changes</span></header>
+  const P = planState(), p = PL(), cs = cardState();
+  return `<div class="stack">${planHeadPanel(P)}${planMovesPanel(P)}${planMilestonesPanel(P)}${planDebtPanel(P, fl, cs, s)}${planEfPanel(P, p)}${planPotsPanel(P, p, cs)}${planLaterPanel(P, p, s)}</div>`;
+}
+function planHeadPanel(P){   // the stage we're at, and the ladder of the 6 stages
+  return `<section class="panel"><header><h2>Our plan</h2><span class="mut" style="font-size:.85rem">Worked out from everything in the system, every time something changes</span></header>
     <div class="bighead"><b>Stage ${P.cur + 1} of 6</b><span><b>${esc(STAGES[P.cur].t)}</b></span></div>
     <p class="advice"><span class="label">Where we are</span><span style="font-weight:600">${esc(planNextLine(P))}</span></p>
     ${ladderHTML(P)}
     <p class="mut" style="font-size:.85rem">Stages 1 to 4 go in order. The pension checks can be done any time. Investing only opens when every gate is green. Dates assume that each payment that ends moves on to the next goal, as the moves below say.</p></section>`;
-  const moves = `<section class="panel"><header><h2>Our moves now</h2><span class="mut" style="font-size:.85rem">Where each spare euro goes</span></header>${movesHTML(planMoves(P))}
+}
+function planMovesPanel(P){   // where each spare euro goes now
+  return `<section class="panel"><header><h2>Our moves now</h2><span class="mut" style="font-size:.85rem">Where each spare euro goes</span></header>${movesHTML(planMoves(P))}
     ${!P.done.base ? `<h3>Stage 1 checks</h3><div class="gates">${P.base.map(g => `<div class="gate">${g.ok ? '<span class="chip ok">✓</span>' : '<span class="chip bad">✕</span>'}<span>${esc(g.t)}</span></div>`).join('')}</div>` : ''}</section>`;
-  // debts, in the order to clear them
-  const rows = [];
+}
+function planDebtPanel(P, fl, cs, s){   // debts, in the order to clear them, and what paying a bit more each week does
+  const sim = P.sim, cw = num(s.cardWeekly), rows = [];
   if (cs && cs.bal > 0) rows.push({n: 'AIB credit card', left: cs.bal, rate: num(s.cardApr) ? `${num(s.cardApr)}% APR` : 'charges interest', end: sim.cardOff, how: 'Pay this first', o: 0});
   for (const e of sim.ends) if (e.left > 0) rows.push({n: e.name, left: e.left, rate: e.cost == null ? 'cost unknown: add the amount financed' : e.cost > 1 ? `costs ${money(e.cost)} in interest` : 'interest-free', end: e.d, how: e.cost > 1 ? 'Next, after the card' : e.onCard ? 'Charged to the card on its dates' : 'Pay on its dates only', o: e.cost == null || e.cost > 1 ? 1 : 2});
   rows.sort((a, b) => a.o - b.o || b.left - a.left);
@@ -3336,14 +3342,15 @@ function vPlan(){
       <tr><td>As now (${money(cw)})</td><td>${pr0.payoff ? dlong(pr0.payoff) : 'not at this rate'}</td><td class="r num">${money(pr0.interest)}</td><td class="r num">—</td><td class="r num">${money(fl.free)}</td><td></td></tr>
       ${opts.map(({xx, pr}) => { const fits = fl.free - xx >= 0, tight = fl.free - xx < 20; return `<tr><td>+${money(xx)}</td><td>${pr && pr.payoff ? dlong(pr.payoff) : '—'}</td><td class="r num">${pr ? money(pr.interest) : '—'}</td><td class="r num">${pr && pr.payoff && pr0.payoff ? `${dayDiff(pr.payoff, pr0.payoff)} days` : '—'}</td><td class="r num ${fits ? '' : 'neg'}">${money(fl.free - xx)}</td><td>${!fits ? '<span class="chip bad">Doesn’t fit</span>' : S.canWrite ? `<button class="btn small" data-act="planExtra" data-x="${xx}">Use this</button>${tight ? ' <span class="chip warn">Tight</span>' : ''}` : ''}</td></tr>`; }).join('')}
     </tbody></table></div><p class="mut" style="font-size:.85rem">“Use this” raises the weekly transfer to AIB savings in Settings and records it in History. Leave room to breathe: a plan that’s too tight is when impulse buying comes back.</p>` : '';
-  const debtPanel = `<section class="panel"><header><h2>Debt to zero</h2><span class="mono">${money(P.dz.total)}${sim.debtFree && P.dz.total > 0 ? ` · free of it around ${esc(dlong(sim.debtFree))}` : ''}</span></header>
+  return `<section class="panel"><header><h2>Debt to zero</h2><span class="mono">${money(P.dz.total)}${sim.debtFree && P.dz.total > 0 ? ` · free of it around ${esc(dlong(sim.debtFree))}` : ''}</span></header>
     ${rows.length ? `<p>The order: <b>whatever charges interest goes first</b>, the highest rate first. That’s the cheapest way out. Interest-free plans run to their end on their own.</p>
     <div class="ledger">${rows.map((r, i) => `<div class="lrow"><span class="d">${i + 1}</span><span class="n"><b>${esc(r.n)}</b> <small>${esc(r.rate)} · ${esc(r.how)}${r.end ? ` · ends ${dlong(r.end)}` : ' · not paid off at the current rate'}</small></span><span class="a">${money(r.left)}</span></div>`).join('')}</div>${extraTable}`
     : '<p class="pos"><b>Nothing owed.</b> Keep it that way: no Klarna, no finance, and the card paid in full every month.</p>'}</section>`;
-  // emergency fund
-  const incT = incWeekly('thiago') * 52 / 12, incR = incWeekly('rory') * 52 / 12;
+}
+function planEfPanel(P, p){   // the emergency fund: how far it goes if one income stops, where it lives, rule 8
+  const sim = P.sim, T = P.T, incT = incWeekly('thiago') * 52 / 12, incR = incWeekly('rory') * 52 / 12;
   const stress = (who, left) => { const gap = T.ess - left; return `<div class="person" style="--c:${who === 'Rory' ? 'var(--personal)' : 'var(--pocket)'}"><span class="label">If ${who}’s income stopped</span>${gap <= 0 ? `<p>The other income still covers the essentials (${money(T.ess)} a month).</p>` : `<p><b class="mono">${money(gap)}</b> a month short.</p><p class="mut" style="font-size:.9rem">The fund now covers ${P.ef > 0 ? `<b>${(P.ef / gap).toFixed(1)} months</b>` : '<b>nothing</b>'}. The full fund would cover ${(T.full / gap).toFixed(1)} months.</p>`}</div>`; };
-  const efPanel = `<section class="panel"><header><h2>Emergency fund</h2><span class="mut" style="font-size:.85rem">${sim.e0.known ? `About ${money(P.ef)} now${sim.e0.added > 0 ? ` · ${money(sim.e0.added)} of it is transfers since ${dshort(pd(sim.e0.date))}` : ''}${sim.e0.interest > 0 ? ` · ${money(sim.e0.interest)} interest after DIRT` : ''}${efAer() > 0 ? ` · earns ${efAer()}% AER` : ''}` : 'Not started yet'}${sim.efW > 0 ? ` · ${money(sim.efW)} a week` : ''}</span></header>
+  return `<section class="panel"><header><h2>Emergency fund</h2><span class="mut" style="font-size:.85rem">${sim.e0.known ? `About ${money(P.ef)} now${sim.e0.added > 0 ? ` · ${money(sim.e0.added)} of it is transfers since ${dshort(pd(sim.e0.date))}` : ''}${sim.e0.interest > 0 ? ` · ${money(sim.e0.interest)} interest after DIRT` : ''}${efAer() > 0 ? ` · earns ${efAer()}% AER` : ''}` : 'Not started yet'}${sim.efW > 0 ? ` · ${money(sim.efW)} a week` : ''}</span></header>
     ${efBars(P)}
     <p class="mut" style="font-size:.9rem">Essentials are <b>${money(T.ess)}</b> a month: bills, Vaults, the shop and cigarettes, and loans or Klarna paid from the Joint account. The card payment isn’t counted, because it stops once the card is clear.</p>
     <h3>Two of us, two incomes</h3><div class="people">${stress('Rory', incT)}${stress('Thiago', incR)}</div>
@@ -3353,23 +3360,28 @@ function vPlan(){
     <h3>Proposed rule 8</h3>
     <div class="rule8"><p><b>The emergency fund is only for real emergencies:</b> lost income, urgent health costs, an urgent repair or urgent travel to family. Never wants, never sales, never planned bills (those have Vaults). If it’s used, refilling it comes before anything else.</p>
       ${p.ruleEf ? `<span class="chip ok">✓ Agreed ${dlong(pd(p.ruleEf))}</span>` : `<p class="mut" style="font-size:.88rem">Only Thiago and Rory together can add a rule.</p>${S.canWrite ? '<div class="actions"><button class="btn" data-act="planRule">We both agreed: add rule 8</button></div>' : ''}`}</div></section>`;
-  const milestones = (() => { const ms = planMilestones(P); return `<section class="panel"><header><h2>Milestones</h2><span class="mut" style="font-size:.85rem">At the current transfers</span></header>
-    <div class="chartwrap">${planSVG(sim, PLAN_C)}</div>${planKey(PLAN_C)}
-    ${ms.length ? `<div class="ledger">${ms.map(m => `<div class="lrow"><span class="d">${esc(fMYL.format(m.d))}</span><span class="n">${m.big ? `<b>${esc(m.t)}</b>` : esc(m.t)}${m.sub ? ` <small>${esc(m.sub)}</small>` : ''}</span><span class="a">${dshort(m.d)}</span></div>`).join('')}</div>` : '<p class="mut">No milestones ahead: debts and the fund are done.</p>'}</section>`; })();
-  // where the money lives
+}
+function planMilestonesPanel(P){   // the milestones ahead, at the current transfers
+  const ms = planMilestones(P);
+  return `<section class="panel"><header><h2>Milestones</h2><span class="mut" style="font-size:.85rem">At the current transfers</span></header>
+    <div class="chartwrap">${planSVG(P.sim, PLAN_C)}</div>${planKey(PLAN_C)}
+    ${ms.length ? `<div class="ledger">${ms.map(m => `<div class="lrow"><span class="d">${esc(fMYL.format(m.d))}</span><span class="n">${m.big ? `<b>${esc(m.t)}</b>` : esc(m.t)}${m.sub ? ` <small>${esc(m.sub)}</small>` : ''}</span><span class="a">${dshort(m.d)}</span></div>`).join('')}</div>` : '<p class="mut">No milestones ahead: debts and the fund are done.</p>'}</section>`;
+}
+function planPotsPanel(P, p, cs){   // where each euro lives, and the rule for each pocket
   const pots = [
     ['Bills Pocket', 'bills', 'Direct debits only', 'Never touched by hand', 'Active'],
     ['Vaults', 'bills', 'Bills that come every few months', 'Only for the bill it’s saved for', vaultBills().length ? 'Active' : 'None yet'],
     ['AIB savings → AIB card', 'pocket', 'Paying the card', 'Only to the card', cs && cs.bal > 0 ? 'Active' : 'Card clear'],
-    ['Emergency fund', 'pocket', 'Real emergencies only', p.ruleEf ? 'Rule 8' : 'Rule 8 (proposed)', sim.efW > 0 || P.ef > 0 ? 'Active' : 'To open'],
+    ['Emergency fund', 'pocket', 'Real emergencies only', p.ruleEf ? 'Rule 8' : 'Rule 8 (proposed)', P.sim.efW > 0 || P.ef > 0 ? 'Active' : 'To open'],
     ['Joint account', 'joint', 'The shop, cigarettes, then free money', 'When it’s gone, we wait', 'Active'],
     ['Pensions', 'personal', 'Retirement', 'Locked until retirement age', 'Rory: active · Thiago: State Pension credits'],
     ['Investing', 'personal', 'Money for 10+ years', 'Opens only at stage 6', P.open ? 'Open' : 'Locked']
   ];
-  const potsPanel = `<section class="panel"><header><h2>Where each euro lives</h2></header><div class="tablewrap"><table><thead><tr><th>Pocket</th><th>What it’s for</th><th>Rule</th><th>Status</th></tr></thead><tbody>
+  return `<section class="panel"><header><h2>Where each euro lives</h2></header><div class="tablewrap"><table><thead><tr><th>Pocket</th><th>What it’s for</th><th>Rule</th><th>Status</th></tr></thead><tbody>
     ${pots.map(([n, c, w, r, s2]) => `<tr><td><span class="acc c-${c}">${esc(n)}</span></td><td>${esc(w)}</td><td>${esc(r)}</td><td>${esc(s2)}</td></tr>`).join('')}</tbody></table></div></section>`;
-  // pensions
-  const pens = `<details><summary>Pensions for both of us <span class="mut" style="font-size:.85rem">· facts checked ${dlong(new Date(2026, 9, 17))}</span></summary><div class="people">
+}
+function planPensionsHTML(p){   // Later: pensions for both of us
+  return `<details><summary>Pensions for both of us <span class="mut" style="font-size:.85rem">· facts checked ${dlong(new Date(2026, 9, 17))}</span></summary><div class="people">
     <div class="person" style="--c:var(--personal)"><span class="label">Rory</span><p>Has a private pension${num(p.pensionRory) ? ` (${money(p.pensionRory)} a month)` : ''}, paid ${p.roryPay === 'payroll' ? 'through payroll' : p.roryPay === 'own' ? 'from his own account' : 'from what he keeps each week'}.</p>
       <ul><li>Pension payments get income tax relief at your highest rate, up to an age limit (15% of earnings under 30, 20% at 30–39, 25% at 40–49).</li>
         <li>Paid through payroll, the relief is automatic. Paid from your own account, it isn’t: claim it in Revenue myAccount (Tax credits and reliefs → Your job → PRSA).</li>
@@ -3382,8 +3394,9 @@ function vPlan(){
         <li>A PRSA or the employer’s pension gets income tax relief at the highest rate paid, within the age limits.</li>
         <li>Check the PRSI record on MyWelfare.ie: the weeks on Illness Benefit count as credits towards the State Pension.</li></ul>`}
       ${p.prsiOk ? '<span class="chip ok">✓ Checked</span>' : S.canWrite ? '<button class="btn small" data-act="planTog" data-k="prsiOk">Done: Thiago checked</button>' : ''}</div></div></details>`;
-  // investing
-  const inv = `<details><summary>Investing: DEGIRO and the US market ${P.open ? '<span class="chip ok">Open</span>' : '<span class="chip idle">Locked</span>'}</summary>
+}
+function planInvestHTML(P, p, s){   // Later: investing, its gates, and Irish tax in short
+  return `<details><summary>Investing: DEGIRO and the US market ${P.open ? '<span class="chip ok">Open</span>' : '<span class="chip idle">Locked</span>'}</summary>
     <h3>The gates</h3><div class="gates">${P.gates.map(g => `<div class="gate">${g.ok ? '<span class="chip ok">✓</span>' : '<span class="chip idle">○</span>'}<span>${esc(g.t)}</span></div>`).join('')}</div>
     ${!p.investAgreed && S.canWrite && P.gates.slice(0, 3).every(g => g.ok) ? '<div class="actions"><button class="btn" data-act="planInvest">We both agree to start investing</button></div>' : ''}
     <p class="mut" style="font-size:.9rem">Why the gates: investing while the card charges interest (${num(s.cardApr) ? `${num(s.cardApr)}% APR` : 'double-digit'}) loses money on average, and money that might be needed next year can be down 30% at the worst moment. A trading app is also one more place for impulses.</p>
@@ -3404,9 +3417,10 @@ function vPlan(){
     </div>
     <p class="mut" style="font-size:.85rem">General information, not financial advice. Claude isn’t a financial adviser. For a personal recommendation, see a qualified adviser; MABS (mabs.ie) gives free money advice.</p>
     <p class="srcs">Sources: <a href="https://www.mabs.ie/en/blog/starting-an-emergency-fund-a-simple-guide/" target="_blank" rel="noopener">MABS: emergency fund</a> · <a href="https://www.citizensinformation.ie/en/money-and-tax/personal-finance/pensions/tax-relief-on-pensions/" target="_blank" rel="noopener">Citizens Information: pension tax relief</a> · <a href="https://revenue.ie/en/jobs-and-pensions/pension/relief/how-to-claim.aspx" target="_blank" rel="noopener">Revenue: claiming pension relief</a> · <a href="https://www.raisin.com/en-ie/pensions/auto-enrolment-pensions/" target="_blank" rel="noopener">Auto-enrolment</a> · <a href="https://www.gov.ie/en/publication/fde95f-operational-guidelines-illness-benefit/" target="_blank" rel="noopener">gov.ie: Illness Benefit</a> · <a href="https://www.thejournal.ie/deemed-disposal-rate-tax-reduction-simon-harris-investment-funds-7184315-Oct2026/" target="_blank" rel="noopener">Exit tax to 35%</a> · <a href="https://www.irishexaminer.com/business/economy/arid-41920423.html" target="_blank" rel="noopener">Personal Investment Account</a> · <a href="https://etf.ie/blog/degiro-ireland-review/" target="_blank" rel="noopener">DEGIRO in Ireland</a> · <a href="https://www.justetf.com/en/news/etf/us-domiciled-etfs.html" target="_blank" rel="noopener">US-domiciled ETFs</a> · <a href="https://www.taxesforexpats.com/country-guides/ireland/capital-gains-tax-ireland.html" target="_blank" rel="noopener">CGT in Ireland</a></p></details>`;
-  const later = `<section class="panel"><header><h2>Later</h2><span class="mut" style="font-size:.85rem">Stages 5 and 6: pensions, then investing and the €1M road</span></header>
-    ${pens}${inv}<details><summary>The €1M road</summary><div class="nest">${vMillion()}</div></details></section>`;
-  return `<div class="stack">${head}${moves}${milestones}${debtPanel}${efPanel}${potsPanel}${later}</div>`;
+}
+function planLaterPanel(P, p, s){   // stages 5 and 6: pensions, then investing and the €1M road
+  return `<section class="panel"><header><h2>Later</h2><span class="mut" style="font-size:.85rem">Stages 5 and 6: pensions, then investing and the €1M road</span></header>
+    ${planPensionsHTML(p)}${planInvestHTML(P, p, s)}<details><summary>The €1M road</summary><div class="nest">${vMillion()}</div></details></section>`;
 }
 function planSettingsPanel(){
   const p = PL(), fl = flow();
@@ -4132,14 +4146,18 @@ function enWeeksSVG(daily, C){   // kWh per full week, the last 10 weeks the rea
     ${list.map(([w, v], i) => { const cx = L + slot * i + slot / 2; return `<g><title>Week of ${esc(dshort(pd(w)))}: ${v.toFixed(1)} kWh</title><rect x="${(cx - bw / 2).toFixed(1)}" y="${y(v).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0, y(0) - y(v)).toFixed(1)}" rx="3" fill="${C.s2}"/>${monoText(cx.toFixed(1), H - 7, esc(dshort(pd(w))), C.muted, {anchor: 'middle', fs: 10.5})}</g>`; }).join('')}</svg>`;
 }
 function vEnergy(){
-  const F = enForecast(), E = F.E, T = E.tariff, b = enBill(), C = RC_LIVE, t = today(), TG = enTarget();
+  const F = enForecast();
+  return `<div class="stack">${enNextPanel(F)}${enSwitchBox()}${enMonthsPanel(F)}${enReadForm()}${enUsePanel(F)}${enReadsPanel(F)}${enBillForm()}${enTariffPanel(F)}</div>`;
+}
+function enNextPanel(F){   // Money → Electricity: the next bill, and whether its money will be there
+  const T = F.E.tariff, b = enBill(), TG = enTarget();
   const cls = v => v == null ? 'mut' : v > .02 ? 'neg' : v < -.02 ? 'pos' : 'mut';
   const A = b ? dueAdvice() : null, row = A && A.base ? A.base.rows.find(r => r.id === b.id && Math.abs(dayDiff(r.d, TG.on)) <= 3) : null, vs = b && b.vault ? vaultStatus(b) : null;
   const pending = TG.real ? `<div class="verdict warn"><h3>The bill is in: ${money(TG.amount)}, taken around ${dlong(TG.on)}</h3><p>${dshort(pd(TG.L.from))} – ${dshort(pd(TG.L.to))}, ${Math.round(enUnits(TG.L))} kWh. It shows in Pay on its day; confirming it there starts the forecast for the next one.</p></div>` : '';
   const ready = !b ? `<div class="verdict idle"><h3>Not linked to a bill yet</h3><p>Add the electricity bill and the forecast keeps its amount and date right, so the Bills Pocket, the budget and Rory’s report always know what’s coming.</p>${S.canWrite ? '<div class="actions"><button class="btn strong" data-act="enLink">Add the electricity bill</button></div>' : ''}</div>`
     : `<div class="verdict ${row && !row.ok ? 'bad' : 'ok'}"><h3>${b.vault ? `Vault: ${money(vs.est)} saved of ${money(b.amount)}, ${money(vs.weekly)} a week gets it there` : row ? (row.ok ? `✓ The Bills Pocket will have the money on ${dshort(row.d)}` : `✕ The Bills Pocket would be ${money(-row.after)} short on ${dshort(row.d)}`) : `Paid from the Bills Pocket around ${dshort(TG.on)}`}</h3>
       <p>The bill “${esc(b.name)}” is set to <b>${money(b.amount)}</b> on ${dshort(pd(b.anchor) || TG.on)} and updates itself after every reading. ${b.vault ? 'The weekly Vault transfer follows it.' : `About ${money(F.perWeek)} of each week’s Bills Pocket transfer is for it; its reserve covers it, so no transfer changes.`}</p></div>`;
-  const head = `<section class="panel"><header><h2>Next electricity bill</h2><span class="mut" style="font-size:.85rem">${esc(T.supplier || 'Energia')} · smart tariff · every 2 months</span></header>
+  return `<section class="panel"><header><h2>Next electricity bill</h2><span class="mut" style="font-size:.85rem">${esc(T.supplier || 'Energia')} · smart tariff · every 2 months</span></header>
     ${pending}
     <div class="gtiles">
       <div class="gt"><span class="label">${TG.real ? 'The one after' : 'Next bill'}</span><b>${money(F.cost)}</b><small>between ${money(F.costLow)} and ${money(F.costHigh)} · around ${dshort(F.payDate)}</small></div>
@@ -4153,8 +4171,10 @@ function vEnergy(){
       ${F.last ? `<span>Last bill</span><span>${money(F.last.total)} · ${Math.round(enUnits(F.last))} kWh</span>` : ''}</div>
     ${F.staleDays != null && F.staleDays > 8 ? `<p class="banner" style="margin-top:12px">The last reading is ${F.staleDays} days old. Add this week’s from the Energia app for a sharper forecast.</p>` : !F.readings.length ? '<p class="banner" style="margin-top:12px">No readings yet: the forecast uses the last bill’s use per day. Add this week’s from the Energia app.</p>' : ''}
     <div style="margin-top:12px">${ready}</div></section>`;
-  const MS = enMonths(F), cur = MS.find(x => x.mk === iso(t).slice(0, 7)) || null;
-  const cycle = `<section class="panel"><header><h2>The bill, month by month</h2><span class="mut" style="font-size:.85rem">The app shows one month at a time; the bill covers about two</span></header>
+}
+function enMonthsPanel(F){   // the bill period, month by month, as the Energia app shows it
+  const t = today(), MS = enMonths(F), cur = MS.find(x => x.mk === iso(t).slice(0, 7)) || null;
+  return `<section class="panel"><header><h2>The bill, month by month</h2><span class="mut" style="font-size:.85rem">The app shows one month at a time; the bill covers about two</span></header>
     ${cur ? `<div class="gtiles">
       <div class="gt"><span class="label">${esc(cur.name)} so far</span><b>${cur.hasReading ? `${cur.soFar.toFixed(1)} kWh` : '—'}</b><small>${cur.hasReading ? `1–${cur.upTo.getDate()} ${esc(cur.name.slice(0, 3))}${cur.eur ? ` · ${money(cur.eur)} in the app` : ''}` : 'no reading yet this month'}</small></div>
       <div class="gt"><span class="label">${esc(cur.name)}, whole month</span><b>${Math.round(cur.monthKwh)} kWh</b><small>about ${money(cur.monthCost)} at our tariff</small></div></div>` : ''}
@@ -4163,13 +4183,18 @@ function vEnergy(){
       <span><b>Estimated bill</b></span><span><b>${money(F.cost)}</b> (${money(F.costLow)} – ${money(F.costHigh)}), taken around ${dshort(F.payDate)}</span></div>
     ${enSuspect().length ? `<p class="banner" style="margin-top:12px">${enSuspect().map(x => `The ${dshort(pd(x.r.upTo))} reading (${num(x.r.kwh)} kWh) is ${x.rate.toFixed(0)} kWh a day: it looks like last month’s total saved as ${enMonth(pd(x.r.upTo))}. Delete it and save it again with the right month.`).join(' ')}</p>` : ''}
   </section>`;
-  const form = S.canWrite ? `<section class="panel"><header><h2>This week’s reading</h2><span class="mut" style="font-size:.85rem">Once a week · Energia app → Usage → “So far”</span></header>
+}
+function enReadForm(){   // this week's reading from the Energia app (Thiago only)
+  const t = today();
+  return S.canWrite ? `<section class="panel"><header><h2>This week’s reading</h2><span class="mut" style="font-size:.85rem">Once a week · Energia app → Usage → “So far”</span></header>
     ${(() => { const lm = addDays(enMonthStart(t), -1); return `<div class="fld"><span class="label">Which month does the app show? <small>The title: “Your consumption in …”</small></span>${seg('en', 'month', [['this', enMonth(t)], ['last', enMonth(lm)]])}</div>`; })()}
     <div class="form">${(S.f.en || {}).month === 'last' ? '' : field('en', 'upTo', 'So far up to', {type: 'date', hint: 'The last day in “So far” (1–4 Nov → 4 Nov)'})}${field('en', 'kwh', `kWh so far in ${enMonth((S.f.en || {}).month === 'last' ? addDays(enMonthStart(t), -1) : t)}`, {money: true, ph: '29.01'})}${field('en', 'eur', '€ so far (optional)', {money: true, ph: '12.86'})}</div>
     ${formEnd(S.errAt === 'en', 'enRead', 'Save the reading')}
     <p class="mut" style="font-size:.85rem">The app shows one month at a time and counts from the 1st, so each new number replaces the last one for that month: the system only counts what was added since (shown under Readings). In the first days of a month the app may still show last month: choose that month above, and it counts as the month’s final total. The Sunday money check has the same box.</p></section>` : '';
-  const daily = enDaily(), chart = enWeeksSVG(daily, C), mix = enMix();
-  const use = `<section class="panel"><header><h2>How we use it</h2></header>
+}
+function enUsePanel(F){   // how we use it: week by week, each bill, peak and night
+  const T = F.E.tariff, t = today(), chart = enWeeksSVG(enDaily(), RC_LIVE), mix = enMix();
+  return `<section class="panel"><header><h2>How we use it</h2></header>
     ${chart ? `<div class="chartwrap">${chart}</div><p class="mut" style="font-size:.85rem">kWh in each full week, from the readings.</p>` : '<p class="mut">After three weekly readings, a chart shows the use week by week.</p>'}
     <div class="tablewrap"><table><thead><tr><th>Period</th><th class="r">kWh</th><th class="r">a day</th><th class="r">Peak</th><th class="r">Bill</th><th class="r">a day</th>${S.canWrite ? '<th></th>' : ''}</tr></thead><tbody>
       ${F.B.slice().reverse().map(x => { const dd = num(x.days || dayDiff(pd(x.from), pd(x.to))); return `<tr><td class="num">${dshort(pd(x.from))} – ${dshort(pd(x.to))}</td><td class="r num">${Math.round(enUnits(x))}</td><td class="r num">${(enUnits(x) / dd).toFixed(2)}</td><td class="r num">${Math.round(num(x.peak) / (enUnits(x) || 1) * 100)}%</td><td class="r num">${money(x.total)}</td><td class="r num">${money(num(x.total) / dd)}</td>${S.canWrite ? `<td><button class="btn small danger" data-act="enBillDel" data-d="${esc(x.to)}">Delete</button></td>` : ''}</tr>`; }).join('')}
@@ -4179,17 +4204,22 @@ function vEnergy(){
       <li class="idle"><span>Winter use is higher: the top of the range allows 20% more for the rest of the period.</span></li>
       ${F.appCheck ? `<li class="idle"><span>Check against the app: ${num(F.appCheck.r.kwh)} kWh up to ${dshort(pd(F.appCheck.r.upTo))} cost ${money(F.appCheck.r.eur)} in the app; our tariff gives ${money(F.appCheck.ours)}.</span></li>` : ''}
       ${pd(T.contractEnd) && dayDiff(t, pd(T.contractEnd)) <= 60 ? `<li class="warn"><span>The contract ends on ${dlong(pd(T.contractEnd))}. Compare prices (bonkers.ie, switcher.ie) before it rolls on to a standard rate.</span></li>` : `<li class="idle"><span>The contract runs to ${pd(T.contractEnd) ? dlong(pd(T.contractEnd)) : '—'}; the To do list reminds us to compare prices 6 weeks before.</span></li>`}</ul></section>`;
-  const reads = F.readings.length ? `<section class="panel"><header><h2>Readings</h2><span class="mut" style="font-size:.85rem">Each new number replaces the last one for its month; only what it adds counts</span></header><div class="ledger">${enReadingRows().slice(0, 14).map(x => `<div class="lrow"><span class="d">${dshort(pd(x.r.upTo))}</span><span class="n">${num(x.r.kwh)} kWh so far in ${esc(enMonth(pd(x.r.upTo)))}${x.final ? ' (final)' : ''}<br><small>${x.first ? `+${x.add.toFixed(1)} kWh since 1 ${esc(enMonth(pd(x.r.upTo)).slice(0, 3))}` : `+${x.add.toFixed(1)} kWh since the last reading`}${x.perDay != null ? ` · ${x.n} day${x.n > 1 ? 's' : ''}, ${x.perDay.toFixed(1)} a day` : ''}${x.r.eur ? ` · ${money(x.r.eur)} in the app` : ''}</small></span><span class="a">${S.canWrite ? `<button class="btn small danger" data-act="enDelRead" data-d="${esc(x.r.upTo)}">Delete</button>` : ''}</span></div>`).join('')}</div></section>` : '';
-  const billForm = S.canWrite ? `<section class="panel"><header><h2>When the bill arrives</h2></header><p class="mut" style="font-size:.9rem">Copy it from page 2 of the bill (“Your usage details”). The real bill sets the amount and date in Pay, teaches the system our day, night and peak split, and starts the next period.</p>
+}
+function enReadsPanel(F){   // every reading, with what it added
+  return F.readings.length ? `<section class="panel"><header><h2>Readings</h2><span class="mut" style="font-size:.85rem">Each new number replaces the last one for its month; only what it adds counts</span></header><div class="ledger">${enReadingRows().slice(0, 14).map(x => `<div class="lrow"><span class="d">${dshort(pd(x.r.upTo))}</span><span class="n">${num(x.r.kwh)} kWh so far in ${esc(enMonth(pd(x.r.upTo)))}${x.final ? ' (final)' : ''}<br><small>${x.first ? `+${x.add.toFixed(1)} kWh since 1 ${esc(enMonth(pd(x.r.upTo)).slice(0, 3))}` : `+${x.add.toFixed(1)} kWh since the last reading`}${x.perDay != null ? ` · ${x.n} day${x.n > 1 ? 's' : ''}, ${x.perDay.toFixed(1)} a day` : ''}${x.r.eur ? ` · ${money(x.r.eur)} in the app` : ''}</small></span><span class="a">${S.canWrite ? `<button class="btn small danger" data-act="enDelRead" data-d="${esc(x.r.upTo)}">Delete</button>` : ''}</span></div>`).join('')}</div></section>` : '';
+}
+function enBillForm(){   // when the real bill arrives (Thiago only)
+  return S.canWrite ? `<section class="panel"><header><h2>When the bill arrives</h2></header><p class="mut" style="font-size:.9rem">Copy it from page 2 of the bill (“Your usage details”). The real bill sets the amount and date in Pay, teaches the system our day, night and peak split, and starts the next period.</p>
     <div class="form">${field('enb', 'from', 'Period from', {type: 'date'})}${field('enb', 'to', 'Period to', {type: 'date'})}${field('enb', 'day', 'Day units (kWh)', {money: true, ph: '254.502'})}${field('enb', 'night', 'Night units (kWh)', {money: true, ph: '106.146'})}${field('enb', 'peak', 'Peak units (kWh)', {money: true, ph: '50.506'})}${field('enb', 'total', 'Total of the bill (€)', {money: true, ph: '168.75'})}${field('enb', 'billDate', 'Date of the bill', {type: 'date'})}${field('enb', 'takeOn', 'Taken on', {type: 'date', hint: 'The direct debit date on the bill'})}</div>
     ${formEnd(S.errAt === 'enb', 'enBill', 'Save the bill')}</section>` : '';
-  const tf = S.f.ent || T, mode = (S.f.enm || {}).mode || E.mode;
+}
+function enTariffPanel(F){   // our tariff, where its money waits, and a check against the last bill
+  const E = F.E, T = E.tariff, tf = S.f.ent || T, mode = (S.f.enm || {}).mode || E.mode;
   const lastChk = F.last ? enCost(enUnits(F.last), num(F.last.days || dayDiff(pd(F.last.from), pd(F.last.to))), enBillMix(F.last)) : null;
-  const tariff = `<section class="panel"><header><h2>Our tariff</h2><span class="mut" style="font-size:.85rem">From the bill; change it when Energia changes the prices</span></header>
+  return `<section class="panel"><header><h2>Our tariff</h2><span class="mut" style="font-size:.85rem">From the bill; change it when Energia changes the prices</span></header>
     <div class="form">${[['standing', 'Standing charge (€ a day)'], ['day', 'Day (€ a unit)'], ['night', 'Night (€ a unit)'], ['peak', 'Peak (€ a unit)'], ['discount', 'Discount on units (%)'], ['pso', 'PSO levy (€ a month)'], ['vat', 'VAT (%)']].map(([k, l]) => `<div class="fld"><label for="f_ent_${k}">${l}</label><input id="f_ent_${k}" data-f="ent.${k}" inputmode="decimal" value="${esc(String(tf[k] ?? ''))}"${S.canWrite ? '' : ' disabled'}></div>`).join('')}<div class="fld"><label for="f_ent_contractEnd">Contract ends</label><input id="f_ent_contractEnd" type="date" data-f="ent.contractEnd" value="${esc(tf.contractEnd || '')}"${S.canWrite ? '' : ' disabled'}></div></div>
     ${S.canWrite ? `<div class="fld" style="margin-top:10px"><span class="label">Where its money waits</span><div class="seg" role="group">${[['pocket', 'In the Bills Pocket'], ['vault', 'In the Vault']].map(([v, l]) => `<button type="button" data-act="seg" data-form="enm" data-key="mode" data-val="${v}" aria-pressed="${mode === v}">${l}</button>`).join('')}</div><small class="mut">${mode === 'vault' ? 'The Vault transfer from the Joint account goes up by its weekly share.' : 'The Bills Pocket’s reserve covers it: no transfer changes.'}</small></div><div class="actions"><button class="btn" data-act="enTariff">Save</button></div>` : ''}
     ${lastChk != null ? `<p class="mut" style="font-size:.85rem">Check: the last bill worked out with these prices comes to ${money(lastChk)}; the real bill was ${money(F.last.total)}${Math.abs(lastChk - num(F.last.total)) >= 1 ? '. If they don’t match, a price has changed' : ' ✓'}.</p>` : ''}</section>`;
-  return `<div class="stack">${head}${enSwitchBox()}${cycle}${form}${use}${reads}${billForm}${tariff}</div>`;
 }
 /* the rest of the system: To do, Rory's report, the advisor */
 function energyTodos(){
@@ -4573,96 +4603,114 @@ function cmpEval(c){   // every plan through the same test a new bill gets, with
   const A = dueAdvice();
   const sig = JSON.stringify([cmpDoc(c), S._pk && S._pk.sig, st().updatedAt, PL().updatedAt, (S.energy || {}).updatedAt, S.spending.length, S.cardlog.length, S.wishlist.length, S.answers.length, iso(today())]);   // Rory's answers live outside the comparison: a new one is judged again
   S._cmpE ||= new Map(); if (S._cmpE.has(sig)) return S._cmpE.get(sig);
-  const fl = flow(), R = billRoom(), AD = advisor(), cs = cardState(), bal = cs ? cs.bal : 0, pr0 = project(0), now = cmpToday(c), t = today();
-  const m0s = monthStart(pd(c.start) > t ? pd(c.start) : t), before = commitAt(m0s, {payoff: pr0 && pr0.payoff});
-  const known = essentialsKnown(), gap0 = known ? Math.max(0, Math.round(-fl.free * 100) / 100) : null, tB = num(st().transferBills);
-  const drop = c.replaces.length ? {ids: c.replaces, from: pd(c.start)} : null;
-  const U = cmpUseMap(c), svc = cmpServices(c), unrated = svc.filter(x => !U[x.key]), lv = l => svc.filter(x => (U[x.key] || {}).lvl === l);
-  const needS = lv('need'), someS = lv('some'), neverS = lv('never'), RY = cmpRory(c);
-  const rows = c.plans.map(p => {
-    const k = cmpCost(c, p), why = [], add = (s2, txt) => why.push({st: s2, t: txt});
-    const first = cmpFirst(c, p), yearly = p.per === 'year' && c.kind !== 'energy';
-    if (!(k.monthly > 0)) return {p, k, st: 'idle', why: [{st: 'idle', t: c.kind === 'energy' ? 'Enter its rates to judge it.' : 'Enter its price to judge it.'}], first, yearly};
-    const diff = Math.round((k.monthly - now.monthly) * 100) / 100, dW = diff * 12 / 52, more = diff > .005;
-    // what it has to have
-    const miss = needS.filter(x => !cmpPlanHas(p, x.key, U[x.key].min)); if (miss.length) add('bad', `Missing something we need: ${miss.map(x => x.name + (U[x.key].min ? ` (${cmpGb(U[x.key].min)} or more)` : '')).join(', ')}.`);
-    const fewPeople = c.kind !== 'energy' && num(p.covers) > 0 && num(p.covers) < c.users;
-    if (fewPeople) add('bad', `It covers ${num(p.covers)} ${num(p.covers) === 1 ? 'person' : 'people'}; ${c.users} of us would use it.`);
-    const lack = someS.filter(x => !cmpPlanHas(p, x.key, U[x.key].min)); if (lack.length) add('idle', `No ${cmpNames(lack)} (we use ${lack.length > 1 ? 'them' : 'it'} sometimes).`);
-    const used = svc.filter(x => U[x.key] && U[x.key].lvl !== 'never' && cmpPlanHas(p, x.key, U[x.key].min)), unused = neverS.filter(x => cmpPlanHas(p, x.key));
-    if (RY && RY.plan === p.id && RY.answer === 'no') add('bad', `Rory said no${RY.answeredAt ? ` on ${dshort(new Date(RY.answeredAt))}` : ''}${RY.said ? `: “${RY.said}”` : ''}.`);
-    // the money: income promised, room for a new bill, this week's mode
-    const cAfter = {pct: before.income > 0 ? (before.committed + diff) / before.income : null, free: before.free - diff};
-    if (more){
-      if (cAfter.free < 0) add('bad', `We would spend more than comes in each month (free money ${money(before.free)} → ${money(cAfter.free)}).`);
-      else if (cAfter.pct > .8) add('bad', `${pctTxt(before.pct)} → ${pctTxt(cAfter.pct)} of our income promised: over 80%.`);
-      else if (cAfter.pct > .65) add('warn', `${pctTxt(before.pct)} → ${pctTxt(cAfter.pct)} of our income promised: 65–80% is tight.`);
-      if (R && R.st === 'bad') add('bad', `It costs ${money(diff)} a month more, and the page says no new bills for now: ${R.why.join('; ')}.`);
-      else if (R && R.st === 'warn') add(!c.replaces.length && c.kind !== 'energy' ? 'bad' : diff > R.room + .005 ? 'bad' : 'warn', !c.replaces.length && c.kind !== 'energy' ? 'Money is tight: a new bill only if it replaces another one.' : diff > R.room + .005 ? `${money(diff)} a month more is over the room left (${money(R.room)} a month).` : `Tight: ${money(diff)} a month more, and little room left.`);
-      else if (R && diff > R.room + .005) add('warn', `${money(diff)} a month more is over the comfortable room (${money(R.room)} a month).`);
-      if (AD && AD.mode === 'tighten') add('warn', 'This is a tighten week: no new costs until it’s over.');
-    }
-    // will the money be there? the Bills Pocket day by day, and its review
-    let pocket = null, safeNew = null, raise = 0, freed = 0;
-    const fromPocket = c.kind === 'energy' || (c.account === 'bills' && !yearly);
-    if (fromPocket){
-      const ex = c.kind === 'energy' ? (more ? {name: `${p.name} (more than now)`, amount: Math.round(diff * 2 * 100) / 100, start: enForecast().payDate, months: 6, every: 2} : null)
-        : {name: `${c.name || 'New plan'} · ${p.name}`, amount: num(p.price), start: first, months: 12, day: first.getDate()};
-      if (ex || drop){
-        pocket = pocketSim({days: 91, s0: A ? A.s0 : undefined, extra: ex, drop});
-        if (pocket && pocket.first && !(A && A.base.first)) add('bad', `The Bills Pocket would be ${money(pocket.first.short)} short on ${dshort(pocket.first.d)} (${pocket.first.name}).`);
-        else if (pocket && pocket.first && more) add('bad', `The Bills Pocket is already short on ${dshort(A.base.first.d)}: that comes first.`);
-        if (Math.abs(dW) >= .2){ const sN = safeTransfer({extra: ex, drop, needDelta: dW}); if (sN){ safeNew = sN.v; raise = Math.max(0, sN.v - tB); freed = Math.max(0, tB - sN.v); } }
-        if (raise > 0 && more) add('warn', `The Bills Pocket transfer would have to go from ${money(tB)} to ${money(safeNew)} a week (Bills Pocket review).`);
-      }
-    }
-    // a yearly plan: saved for in the Vault, and never on the card while it owes anything
-    let vaultW = null;
-    if (yearly){
-      const price = k.promo ? k.promo.price : num(p.price);
-      if (c.account === 'card' && bal > .005) add('bad', `A yearly payment on the AIB card while it owes ${money(bal)}: never. Take the monthly plan, or pay it from the Vault.`);
-      else { const wks = Math.max(0, dayDiff(t, first) / 7); vaultW = wks >= 1 ? Math.ceil(price / wks * 100) / 100 : null;
-        if (wks < 4) add('bad', `Only ${Math.max(0, Math.floor(wks))} week${Math.floor(wks) === 1 ? '' : 's'} until it’s charged: the Vault can’t save ${money(price)} in time. Take the monthly plan, or start later.`);
-        else if (wks < 26) add('warn', `The Vault has ${Math.floor(wks)} weeks to save ${money(price)}: ${money(vaultW)} a week until ${dshort(first)}, then ${money(price / 52)}.`);
-        else add('ok', `The Vault saves it in time: ${money(vaultW)} a week until ${dshort(first)}.`); }
-    }
-    // what stays in the Joint account for the shop: the shop gap
-    const jointRepW = (now.bills || []).filter(b => b.account === 'joint' && !b.vault).reduce((a, b) => a + weeklyEq(billViews(b).pop()), 0);   // what the replaced bills took from the Joint account
-    const jointW = yearly ? (c.account === 'card' ? 0 : (vaultW != null ? vaultW : k.weekly) - jointRepW) : c.account === 'joint' ? k.weekly - jointRepW : fromPocket ? raise : 0;
-    const gap1 = known ? Math.max(0, Math.round((gap0 + Math.max(0, jointW)) * 100) / 100) : null;
-    if (known && gap1 > gap0 + .5) add('warn', gap0 > 0 ? `The shop gap grows from ${money(gap0)} to ${money(gap1)} a week.` : `The shop, cigarettes and drinks would no longer fit: ${money(gap1)} a week short.`);
-    // the card: days of debt added or saved
-    let cardDays = null; if (pr0 && pr0.payoff && Math.abs(dW) >= .05){ const pa = project(-dW); cardDays = pa && pa.payoff ? dayDiff(pr0.payoff, pa.payoff) : Infinity; if (cardDays === Infinity) add('bad', 'The card would never reach €0 at this weekly payment.'); }
-    // promo, fees, lock-in, free trial
-    if (k.promo) add('idle', `${money(k.promo.price)}${yearly ? ' the first year' : ` for ${k.promo.months} month${k.promo.months === 1 ? '' : 's'}`}, then ${money(p.price)}: judged on the real price.`);
-    if (k.after) add('idle', `The discount lasts ${num(p.promoMonths)} months; then about ${money(k.after)} a month.`);
-    if (num(p.lock) > 12) add('warn', `Tied in for ${num(p.lock)} months${num(p.cancelFee) > 0 ? `; leaving early costs ${money(p.cancelFee)}` : ''}: if money gets tight, we can’t get out.`);
-    else if (num(p.lock) > 0) add('idle', `Tied in for ${num(p.lock)} months${num(p.cancelFee) > 0 ? `; leaving early costs ${money(p.cancelFee)}` : ''}.`);
-    else if (num(p.cancelFee) > 0) add('idle', `Cancelling costs ${money(p.cancelFee)}.`);
-    if (num(p.setup) > 0) add('idle', `Set-up fee ${money(p.setup)}, counted in the first 12 months.`);
-    if (c.leaveFee > 0) add('idle', `Leaving what we have now costs ${money(c.leaveFee)}, counted in the first 12 months.`);
-    if (num(p.trial) > 0) add('idle', `Free for ${Math.round(num(p.trial))} days: the first charge is ${dshort(first)}. If nobody cancels, it’s already a bill in the system; the To do list reminds us 5 days before.`);
-    if (!more && diff < -.005) add('ok', `Saves ${money(-diff)} a month (${money(-diff * 12)} a year).${freed >= 5 ? ` The Bills Pocket review can then lower the transfer to ${money(safeNew)} a week; what it frees closes the shop gap first.` : ''}`);
-    else if (!more) add('ok', 'Costs the same as now.');
-    else if (!why.some(w => w.st === 'bad' || w.st === 'warn')) add('idle', `${money(diff)} a month more than now; the money is there for it.`);
-    const s2 = why.some(w => w.st === 'bad') ? 'bad' : why.some(w => w.st === 'warn') ? 'warn' : 'ok';
-    return {p, k, st: s2, missNeed: miss.length > 0, fewPeople, used, unused, why: why.sort((a, b) => ({bad: 0, warn: 1, ok: 2, idle: 3})[a.st] - ({bad: 0, warn: 1, ok: 2, idle: 3})[b.st]), diff, dW, first, yearly, cAfter, pocket, safeNew, raise, freed, jointW, gap1, cardDays, vaultW};
-  });
-  // a bigger plan only for things we don't use: what it costs over the cheapest plan that has everything we need
-  const fits = r => r.k && r.k.monthly > 0 && !r.missNeed && !r.fewPeople;
-  const base = rows.filter(r => fits(r) && !r.why.some(w => w.st === 'bad')).sort((a, b) => a.k.monthly - b.k.monthly)[0] || null, ORD = {bad: 0, warn: 1, ok: 2, idle: 3};   // the cheapest plan with everything we need that isn't red for another reason (a yearly plan the Vault can't save in time is no yardstick)
+  const X = cmpCtx(c, A), rows = c.plans.map(p => cmpPlanRow(c, p, X)), base = cmpOverBase(rows, X), {best, rec} = cmpRecommend(c, rows, X);
+  const v = {c, rows, best, rec, now: X.now, before: X.before, gap0: X.gap0, known: X.known, A, R: X.R, AD: X.AD, bal: X.bal, tB: X.tB, svc: X.svc, U: X.U, unrated: X.unrated, base};
+  if (S._cmpE.size > 30) S._cmpE.clear();
+  S._cmpE.set(sig, v); return v;
+}
+function cmpCtx(c, A){   // what every plan of a comparison is judged against: today's cost, the month, the shop gap, the card, how much we use each service
+  const fl = flow(), cs = cardState(), pr0 = project(0), t = today(), U = cmpUseMap(c), svc = cmpServices(c), lv = l => svc.filter(x => (U[x.key] || {}).lvl === l);
+  const known = essentialsKnown();
+  return {A, fl, R: billRoom(), AD: advisor(), bal: cs ? cs.bal : 0, pr0, now: cmpToday(c), t, before: commitAt(monthStart(pd(c.start) > t ? pd(c.start) : t), {payoff: pr0 && pr0.payoff}),
+    known, gap0: known ? Math.max(0, Math.round(-fl.free * 100) / 100) : null, tB: num(st().transferBills), drop: c.replaces.length ? {ids: c.replaces, from: pd(c.start)} : null,
+    U, svc, unrated: svc.filter(x => !U[x.key]), needS: lv('need'), someS: lv('some'), neverS: lv('never'), RY: cmpRory(c)};
+}
+const CMP_ORD = {bad: 0, warn: 1, ok: 2, idle: 3};   // the reasons, worst first
+function cmpVerdict(r){ r.why.sort((a, b) => CMP_ORD[a.st] - CMP_ORD[b.st]); r.st = r.why.some(w => w.st === 'bad') ? 'bad' : r.why.some(w => w.st === 'warn') ? 'warn' : 'ok'; return r; }
+function cmpPlanRow(c, p, X){   // one plan: each reason it's green, amber or red, and the numbers behind them
+  const k = cmpCost(c, p), why = [], add = (s2, txt) => why.push({st: s2, t: txt});
+  const first = cmpFirst(c, p), yearly = p.per === 'year' && c.kind !== 'energy';
+  if (!(k.monthly > 0)) return {p, k, st: 'idle', why: [{st: 'idle', t: c.kind === 'energy' ? 'Enter its rates to judge it.' : 'Enter its price to judge it.'}], first, yearly};
+  const diff = Math.round((k.monthly - X.now.monthly) * 100) / 100, dW = diff * 12 / 52, more = diff > .005;
+  const has = cmpPlanNeeds(c, p, X, add);
+  const cAfter = cmpPlanMoney(c, X, diff, more, add);
+  const fromPocket = c.kind === 'energy' || (c.account === 'bills' && !yearly);
+  const {pocket, safeNew, raise, freed} = fromPocket ? cmpPlanPocket(c, p, X, first, diff, dW, more, add) : {pocket: null, safeNew: null, raise: 0, freed: 0};
+  const vaultW = yearly ? cmpPlanYearly(c, p, k, first, X, add) : null;
+  // what stays in the Joint account for the shop: the shop gap
+  const jointRepW = (X.now.bills || []).filter(b => b.account === 'joint' && !b.vault).reduce((a, b) => a + weeklyEq(billViews(b).pop()), 0);   // what the replaced bills took from the Joint account
+  const jointW = yearly ? (c.account === 'card' ? 0 : (vaultW != null ? vaultW : k.weekly) - jointRepW) : c.account === 'joint' ? k.weekly - jointRepW : fromPocket ? raise : 0;
+  const gap1 = X.known ? Math.max(0, Math.round((X.gap0 + Math.max(0, jointW)) * 100) / 100) : null;
+  if (X.known && gap1 > X.gap0 + .5) add('warn', X.gap0 > 0 ? `The shop gap grows from ${money(X.gap0)} to ${money(gap1)} a week.` : `The shop, cigarettes and drinks would no longer fit: ${money(gap1)} a week short.`);
+  // the card: days of debt added or saved
+  let cardDays = null; if (X.pr0 && X.pr0.payoff && Math.abs(dW) >= .05){ const pa = project(-dW); cardDays = pa && pa.payoff ? dayDiff(X.pr0.payoff, pa.payoff) : Infinity; if (cardDays === Infinity) add('bad', 'The card would never reach €0 at this weekly payment.'); }
+  cmpPlanTerms(c, p, k, first, yearly, add);
+  if (!more && diff < -.005) add('ok', `Saves ${money(-diff)} a month (${money(-diff * 12)} a year).${freed >= 5 ? ` The Bills Pocket review can then lower the transfer to ${money(safeNew)} a week; what it frees closes the shop gap first.` : ''}`);
+  else if (!more) add('ok', 'Costs the same as now.');
+  else if (!why.some(w => w.st === 'bad' || w.st === 'warn')) add('idle', `${money(diff)} a month more than now; the money is there for it.`);
+  return cmpVerdict({p, k, st: '', missNeed: has.miss.length > 0, fewPeople: has.fewPeople, used: has.used, unused: has.unused, why, diff, dW, first, yearly, cAfter, pocket, safeNew, raise, freed, jointW, gap1, cardDays, vaultW});
+}
+function cmpPlanNeeds(c, p, X, add){   // what it has to have: everything we need, everyone who uses it, and Rory's answer
+  const U = X.U, miss = X.needS.filter(x => !cmpPlanHas(p, x.key, U[x.key].min)); if (miss.length) add('bad', `Missing something we need: ${miss.map(x => x.name + (U[x.key].min ? ` (${cmpGb(U[x.key].min)} or more)` : '')).join(', ')}.`);
+  const fewPeople = c.kind !== 'energy' && num(p.covers) > 0 && num(p.covers) < c.users;
+  if (fewPeople) add('bad', `It covers ${num(p.covers)} ${num(p.covers) === 1 ? 'person' : 'people'}; ${c.users} of us would use it.`);
+  const lack = X.someS.filter(x => !cmpPlanHas(p, x.key, U[x.key].min)); if (lack.length) add('idle', `No ${cmpNames(lack)} (we use ${lack.length > 1 ? 'them' : 'it'} sometimes).`);
+  const used = X.svc.filter(x => U[x.key] && U[x.key].lvl !== 'never' && cmpPlanHas(p, x.key, U[x.key].min)), unused = X.neverS.filter(x => cmpPlanHas(p, x.key));
+  const RY = X.RY; if (RY && RY.plan === p.id && RY.answer === 'no') add('bad', `Rory said no${RY.answeredAt ? ` on ${dshort(new Date(RY.answeredAt))}` : ''}${RY.said ? `: “${RY.said}”` : ''}.`);
+  return {miss, fewPeople, used, unused};
+}
+function cmpPlanMoney(c, X, diff, more, add){   // the money: income promised, room for a new bill, this week's mode
+  const before = X.before, R = X.R, cAfter = {pct: before.income > 0 ? (before.committed + diff) / before.income : null, free: before.free - diff};
+  if (!more) return cAfter;
+  if (cAfter.free < 0) add('bad', `We would spend more than comes in each month (free money ${money(before.free)} → ${money(cAfter.free)}).`);
+  else if (cAfter.pct > .8) add('bad', `${pctTxt(before.pct)} → ${pctTxt(cAfter.pct)} of our income promised: over 80%.`);
+  else if (cAfter.pct > .65) add('warn', `${pctTxt(before.pct)} → ${pctTxt(cAfter.pct)} of our income promised: 65–80% is tight.`);
+  if (R && R.st === 'bad') add('bad', `It costs ${money(diff)} a month more, and the page says no new bills for now: ${R.why.join('; ')}.`);
+  else if (R && R.st === 'warn') add(!c.replaces.length && c.kind !== 'energy' ? 'bad' : diff > R.room + .005 ? 'bad' : 'warn', !c.replaces.length && c.kind !== 'energy' ? 'Money is tight: a new bill only if it replaces another one.' : diff > R.room + .005 ? `${money(diff)} a month more is over the room left (${money(R.room)} a month).` : `Tight: ${money(diff)} a month more, and little room left.`);
+  else if (R && diff > R.room + .005) add('warn', `${money(diff)} a month more is over the comfortable room (${money(R.room)} a month).`);
+  if (X.AD && X.AD.mode === 'tighten') add('warn', 'This is a tighten week: no new costs until it’s over.');
+  return cAfter;
+}
+function cmpPlanPocket(c, p, X, first, diff, dW, more, add){   // will the money be there? the Bills Pocket day by day, and its review
+  const A = X.A, drop = X.drop, tB = X.tB;
+  let pocket = null, safeNew = null, raise = 0, freed = 0;
+  const ex = c.kind === 'energy' ? (more ? {name: `${p.name} (more than now)`, amount: Math.round(diff * 2 * 100) / 100, start: enForecast().payDate, months: 6, every: 2} : null)
+    : {name: `${c.name || 'New plan'} · ${p.name}`, amount: num(p.price), start: first, months: 12, day: first.getDate()};
+  if (ex || drop){
+    pocket = pocketSim({days: 91, s0: A ? A.s0 : undefined, extra: ex, drop});
+    if (pocket && pocket.first && !(A && A.base.first)) add('bad', `The Bills Pocket would be ${money(pocket.first.short)} short on ${dshort(pocket.first.d)} (${pocket.first.name}).`);
+    else if (pocket && pocket.first && more) add('bad', `The Bills Pocket is already short on ${dshort(A.base.first.d)}: that comes first.`);
+    if (Math.abs(dW) >= .2){ const sN = safeTransfer({extra: ex, drop, needDelta: dW}); if (sN){ safeNew = sN.v; raise = Math.max(0, sN.v - tB); freed = Math.max(0, tB - sN.v); } }
+    if (raise > 0 && more) add('warn', `The Bills Pocket transfer would have to go from ${money(tB)} to ${money(safeNew)} a week (Bills Pocket review).`);
+  }
+  return {pocket, safeNew, raise, freed};
+}
+function cmpPlanYearly(c, p, k, first, X, add){   // a yearly plan: saved for in the Vault, and never on the card while it owes anything
+  const price = k.promo ? k.promo.price : num(p.price);
+  if (c.account === 'card' && X.bal > .005){ add('bad', `A yearly payment on the AIB card while it owes ${money(X.bal)}: never. Take the monthly plan, or pay it from the Vault.`); return null; }
+  const wks = Math.max(0, dayDiff(X.t, first) / 7), vaultW = wks >= 1 ? Math.ceil(price / wks * 100) / 100 : null;
+  if (wks < 4) add('bad', `Only ${Math.max(0, Math.floor(wks))} week${Math.floor(wks) === 1 ? '' : 's'} until it’s charged: the Vault can’t save ${money(price)} in time. Take the monthly plan, or start later.`);
+  else if (wks < 26) add('warn', `The Vault has ${Math.floor(wks)} weeks to save ${money(price)}: ${money(vaultW)} a week until ${dshort(first)}, then ${money(price / 52)}.`);
+  else add('ok', `The Vault saves it in time: ${money(vaultW)} a week until ${dshort(first)}.`);
+  return vaultW;
+}
+function cmpPlanTerms(c, p, k, first, yearly, add){   // promo, fees, lock-in, free trial: always listed, never the verdict
+  if (k.promo) add('idle', `${money(k.promo.price)}${yearly ? ' the first year' : ` for ${k.promo.months} month${k.promo.months === 1 ? '' : 's'}`}, then ${money(p.price)}: judged on the real price.`);
+  if (k.after) add('idle', `The discount lasts ${num(p.promoMonths)} months; then about ${money(k.after)} a month.`);
+  if (num(p.lock) > 12) add('warn', `Tied in for ${num(p.lock)} months${num(p.cancelFee) > 0 ? `; leaving early costs ${money(p.cancelFee)}` : ''}: if money gets tight, we can’t get out.`);
+  else if (num(p.lock) > 0) add('idle', `Tied in for ${num(p.lock)} months${num(p.cancelFee) > 0 ? `; leaving early costs ${money(p.cancelFee)}` : ''}.`);
+  else if (num(p.cancelFee) > 0) add('idle', `Cancelling costs ${money(p.cancelFee)}.`);
+  if (num(p.setup) > 0) add('idle', `Set-up fee ${money(p.setup)}, counted in the first 12 months.`);
+  if (c.leaveFee > 0) add('idle', `Leaving what we have now costs ${money(c.leaveFee)}, counted in the first 12 months.`);
+  if (num(p.trial) > 0) add('idle', `Free for ${Math.round(num(p.trial))} days: the first charge is ${dshort(first)}. If nobody cancels, it’s already a bill in the system; the To do list reminds us 5 days before.`);
+}
+function cmpOverBase(rows, X){   // a bigger plan only for things we don't use: what it costs over the cheapest plan that has everything we need
+  const U = X.U, fits = r => r.k && r.k.monthly > 0 && !r.missNeed && !r.fewPeople;
+  const base = rows.filter(r => fits(r) && !r.why.some(w => w.st === 'bad')).sort((a, b) => a.k.monthly - b.k.monthly)[0] || null;   // the cheapest plan with everything we need that isn't red for another reason (a yearly plan the Vault can't save in time is no yardstick)
   for (const r of rows){
     if (!base || r === base || !fits(r) || !(r.k.monthly > base.k.monthly + .005)) continue;
-    const extra = Math.round((r.k.monthly - base.k.monthly) * 100) / 100, adds = svc.filter(x => cmpPlanHas(r.p, x.key, (U[x.key] || {}).min) && !cmpPlanHas(base.p, x.key, (U[x.key] || {}).min));
+    const extra = Math.round((r.k.monthly - base.k.monthly) * 100) / 100, adds = X.svc.filter(x => cmpPlanHas(r.p, x.key, (U[x.key] || {}).min) && !cmpPlanHas(base.p, x.key, (U[x.key] || {}).min));
     const addUsed = adds.filter(x => (U[x.key] || {}).lvl !== 'never'), addNever = adds.filter(x => (U[x.key] || {}).lvl === 'never');
     r.extra = extra;
     if (addUsed.length) r.why.unshift({st: 'warn', t: `${money(extra)} a month more than ${base.p.name} (${money(extra * 12)} a year) for ${cmpNames(addUsed)}, which we only use sometimes${addNever.length ? `, and ${cmpNames(addNever)}, which we never use` : ''}. Worth it only if we’ll really use ${addUsed.length > 1 ? 'them' : 'it'}.`});
     else r.why.unshift({st: 'bad', t: adds.length ? `${money(extra)} a month more than ${base.p.name} (${money(extra * 12)} a year) only for ${cmpNames(addNever)}, which we never use.` : `${money(extra)} a month more than ${base.p.name}, and it adds nothing we use.`});
-    r.why.sort((a, b) => ORD[a.st] - ORD[b.st]); r.st = r.why.some(w => w.st === 'bad') ? 'bad' : r.why.some(w => w.st === 'warn') ? 'warn' : 'ok';
+    cmpVerdict(r);
   }
-  const rank = {ok: 0, warn: 1, bad: 2};
-  const ready = rows.filter(r => r.st !== 'idle').sort((a, b) => rank[a.st] - rank[b.st] || a.k.monthly - b.k.monthly);
-  const best = ready[0] || null;
+  return base;
+}
+function cmpRecommend(c, rows, X){   // which plan to take: the best colour, then the cheapest real monthly cost
+  const rank = {ok: 0, warn: 1, bad: 2}, needS = X.needS;
+  const best = rows.filter(r => r.st !== 'idle').sort((a, b) => rank[a.st] - rank[b.st] || a.k.monthly - b.k.monthly)[0] || null;
   let rec;
   if (!best) rec = {st: 'idle', h: c.kind === 'energy' ? 'Enter each offer’s rates to see which one to take' : 'Enter each plan’s price to see which one to take', t: ''};
   else if (best.st === 'ok'){
@@ -4672,11 +4720,9 @@ function cmpEval(c){   // every plan through the same test a new bill gets, with
     if (best.unused && best.unused.length) parts.push(`it also includes ${cmpNames(best.unused)}, which we never use`);
     rec = {st: 'ok', h: `Take ${best.p.name}`, t: `${parts.join(', ')}.`.replace(/^./, x => x.toUpperCase()), best};
   } else if (best.st === 'warn') rec = {st: 'warn', h: `${best.p.name} fits, but it’s tight`, t: (best.why.find(w => w.st === 'warn') || {}).t || '', best};
-  else rec = {st: 'bad', h: now.monthly > 0 ? 'None of these for now: keep what we have' : 'None of these for now', t: (best.why.find(w => w.st === 'bad') || {}).t || '', best};
-  if (unrated.length && best) rec = {st: 'idle', h: 'First: how much do we use each service?', t: `Rate ${cmpNames(unrated)}: we need it, sometimes or never. A bundle is only worth it for what we really use, so the page waits for this before it says which plan, and before Rory is asked.`, best};
-  const v = {c, rows, best, rec, now, before, gap0, known, A, R, AD, bal, tB, svc, U, unrated, base};
-  if (S._cmpE.size > 30) S._cmpE.clear();
-  S._cmpE.set(sig, v); return v;
+  else rec = {st: 'bad', h: X.now.monthly > 0 ? 'None of these for now: keep what we have' : 'None of these for now', t: (best.why.find(w => w.st === 'bad') || {}).t || '', best};
+  if (X.unrated.length && best) rec = {st: 'idle', h: 'First: how much do we use each service?', t: `Rate ${cmpNames(X.unrated)}: we need it, sometimes or never. A bundle is only worth it for what we really use, so the page waits for this before it says which plan, and before Rory is asked.`, best};
+  return {best, rec};
 }
 function cmpCard(c, E, r){   // one plan: its answer, its numbers, and why
   const p = r.p, k = r.k, applied = c.applied && c.applied.plan === p.id, perTxt = r.yearly ? `${money(p.price)} a year` : c.kind === 'energy' ? `about ${money(k.monthly)} a month` : `${money(p.price)} a month`;
@@ -4873,26 +4919,26 @@ async function enSwitchCancel(){
   const c = S.compare.find(x => x.applied && x.applied.tariffNext);
   try { if (c) await cmpUnapply(c, 'Electricity switch cancelled'); else { await enWrite({tariffNext: null}); await logChange('bill', `Electricity switch to ${nx.supplier || 'a new supplier'} on ${dlong(pd(nx.from))} cancelled: the forecast keeps our tariff.`); } toast('Switch cancelled'); render(); } catch (e) { writeErr(e); }
 }
-function cmpTodos(){   // a free trial about to turn into a bill
-  const out = [], t = today();
-  for (const c of S.compare){ const a = c.applied; if (!a || !a.trialEnds) continue;
-    const d = pd(a.trialEnds), b = S.bills.find(x => x.id === a.billId); if (!d || !b || b.active === false || (b.history || []).length) continue;
-    const dl = dayDiff(t, d); if (dl < 0 || dl > 5) continue;
-    out.push({st: 'warn', txt: `Free trial: ${c.name} ends ${dl === 0 ? 'today' : `${fWD.format(d)} ${dshort(d)}`}. If we don’t want it, cancel it with them before then and tap “We cancelled it”. If nobody cancels, ${b.name} stays as a ${money(b.amount)} bill.`, act: 'cmpTrialCancel', id: c.id, btn: 'We cancelled it'});
-  }
-  for (const c of S.compare){   // the decision with Rory: waiting for him, his yes, and the 48 hours
-    if (c.applied) continue; const D = cmpDecision(c, null), R = cmpRory(c); if (!R || !R.asked) continue;
-    if (!R.answer) out.push({st: 'idle', txt: `Waiting for Rory’s answer about ${c.name} · ${R.planName}. He answers in his own app; it shows here as soon as he does.`, to: 'compare', btn: 'Open'});
-    else if (R.answer === 'yes'){ const till = R.diff > .005 ? Date.parse(R.asked) + CMP_WAIT_H * 3600e3 : 0; out.push({st: 'idle', txt: Date.now() < till ? `Rory said yes to ${c.name} · ${R.planName}. It can be applied from ${cmpWhen(new Date(till))}: 48 hours to sleep on it.` : `Rory said yes to ${c.name} · ${R.planName}: apply it in Plan → Compare when you’re ready.`, to: 'compare', btn: 'Open'}); }
-  }
-  { const alone = weekDecisions(weekStartOf(t)).filter(x => x.kind !== 'decision' && x.rory === 'no');   // changes made without Rory: they're in his report
-    if (alone.length) out.push({st: 'warn', txt: `This week you changed ${alone.length === 1 ? 'a bill' : `${alone.length} bills`} without Rory (${alone.map(x => String(x.short || x.text).split(':')[0].replace(/^Added |^Removed /, '')).slice(0, 3).join(', ')}). It’s in his report: talk to him about ${alone.length === 1 ? 'it' : 'them'}.`, to: 'week', btn: 'Report'}); }
-  for (const b of S.bills){   // the same reminder when the comparison itself was deleted
-    const d = pd(b.trialEnds); if (!d || b.active === false || (b.history || []).length || S.compare.some(c => c.applied && c.applied.billId === b.id)) continue;
-    const dl = dayDiff(t, d); if (dl < 0 || dl > 5) continue;
-    out.push({st: 'warn', txt: `Free trial: ${b.trialOf || b.name} ends ${dl === 0 ? 'today' : `${fWD.format(d)} ${dshort(d)}`}. If we don’t want it, cancel it with them before then and tap “We cancelled it”. If nobody cancels, ${b.name} stays as a ${money(b.amount)} bill.`, act: 'cmpTrialBill', id: b.id, btn: 'We cancelled it'});
-  }
-  return out;
+function cmpTrialTodo(t, d, name, b, act, id){   // a free trial ending in the next 5 days, before it turns into a bill
+  const dl = dayDiff(t, d); if (dl < 0 || dl > 5) return null;
+  return {st: 'warn', txt: `Free trial: ${name} ends ${dl === 0 ? 'today' : `${fWD.format(d)} ${dshort(d)}`}. If we don’t want it, cancel it with them before then and tap “We cancelled it”. If nobody cancels, ${b.name} stays as a ${money(b.amount)} bill.`, act, id, btn: 'We cancelled it'};
+}
+function cmpRoryTodo(c){   // the decision with Rory: waiting for him, his yes, and the 48 hours
+  const R = cmpRory(c); if (c.applied || !R || !R.asked) return null;
+  if (!R.answer) return {st: 'idle', txt: `Waiting for Rory’s answer about ${c.name} · ${R.planName}. He answers in his own app; it shows here as soon as he does.`, to: 'compare', btn: 'Open'};
+  if (R.answer !== 'yes') return null;
+  const till = R.diff > .005 ? Date.parse(R.asked) + CMP_WAIT_H * 3600e3 : 0;
+  return {st: 'idle', txt: Date.now() < till ? `Rory said yes to ${c.name} · ${R.planName}. It can be applied from ${cmpWhen(new Date(till))}: 48 hours to sleep on it.` : `Rory said yes to ${c.name} · ${R.planName}: apply it in Plan → Compare when you’re ready.`, to: 'compare', btn: 'Open'};
+}
+function cmpAloneTodo(t){   // bills changed this week without Rory: they're in his report
+  const alone = weekDecisions(weekStartOf(t)).filter(x => x.kind !== 'decision' && x.rory === 'no'); if (!alone.length) return null;
+  return {st: 'warn', txt: `This week you changed ${alone.length === 1 ? 'a bill' : `${alone.length} bills`} without Rory (${alone.map(x => String(x.short || x.text).split(':')[0].replace(/^Added |^Removed /, '')).slice(0, 3).join(', ')}). It’s in his report: talk to him about ${alone.length === 1 ? 'it' : 'them'}.`, to: 'week', btn: 'Report'};
+}
+function cmpTodos(){   // free trials about to turn into bills, and the decisions with Rory
+  const t = today(), open = b => b && b.active !== false && !(b.history || []).length;
+  const trials = S.compare.filter(c => c.applied && c.applied.trialEnds).map(c => { const d = pd(c.applied.trialEnds), b = S.bills.find(x => x.id === c.applied.billId); return d && open(b) ? cmpTrialTodo(t, d, c.name, b, 'cmpTrialCancel', c.id) : null; });
+  const orphans = S.bills.filter(b => pd(b.trialEnds) && open(b) && !S.compare.some(c => c.applied && c.applied.billId === b.id)).map(b => cmpTrialTodo(t, pd(b.trialEnds), b.trialOf || b.name, b, 'cmpTrialBill', b.id));   // the same reminder when the comparison itself was deleted
+  return [...trials, ...S.compare.map(cmpRoryTodo), cmpAloneTodo(t), ...orphans].filter(Boolean);
 }
 
 /* ---------- Ready: our emergency preparedness, for the two of us (Plan → Ready) ----------
@@ -5395,7 +5441,7 @@ function cardIntPanel(){
 }
 
 /* ---------- system health: the page checks itself every time it opens; Claude runs the full check every Monday ---------- */
-const APP_VERSION = '2026.11.12-3';
+const APP_VERSION = '2026.11.12-4';
 function selfCheck(){   // cheap checks on the data, run on every open: things that don't fit, and the weekly tasks that should have run
   const key = `${S._rt}|${iso(today())}`; if (S._hc && S._hc.k === key) return S._hc.v;
   const items = [], t = today(), add = (st2, area, txt) => items.push({st: st2, area, t: txt});
@@ -6012,31 +6058,38 @@ function vAdvisor(){
 }
 
 /* ---------- Today ---------- */
-function todoList(){
-  const out = [], t = today(), ws = weekStartOf(t), wsI = iso(ws), s = st(), fl = flow(), cs = cardState();
+function todoList(){   // Today's To do list: everything that needs us, worst first
+  const out = [], t = today(), ws = weekStartOf(t), C = {t, ws, wsI: iso(ws), fl: flow(), cs: cardState()};
   const add = (st2, txt, to, btn) => out.push({st: st2, txt, to, btn});
-  if (!fl.configured) add('bad', 'Add both incomes and the weekly transfers.', 'setup', 'Open Settings');
-  if (!S.bills.length) add('bad', 'Add your bills, starting with the mortgage.', 'bills', 'Add bills');
-  if (!cs) add('warn', 'Log the AIB card balance from the AIB app.', 'week', 'Money check');
-  const r = latestRec(); if (r && !r.ok && !r.note) add('bad', `${recHeadline(r)} Log it or explain it.`, 'week', 'Sort it out');
-  { const H = selfCheck(), bad = H.items.filter(x => x.st === 'bad'); if (bad.length) add('bad', `System check: ${bad.length === 1 ? bad[0].t : `${bad.length} things in the data don’t fit`}. Settings → System shows what and where.`, 'system', 'Open'); }
-  if (fl.configured){
-    const steps = transferSteps(), tr = (S.weeks[wsI] || {}).transfers || {}, done = steps.filter(x => tr[x.id]).length;
-    const w0 = num(s.weekStart ?? 1), pos = d => (d - w0 + 7) % 7;
-    const paid = [s.paydayRory, s.paydayThiago].filter(has).map(num);
-    for (const m of dueMoves(addDays(t, 1), 3).filter(m => m.abroad && !moveDone(m))) add('idle', `${m.b.name}: send ${money(m.amount)} through Wise on ${fWD.format(m.sendBy)} ${dshort(m.sendBy)}. It shows up in Pay that day.`, '', '');
-  }
-  { const ci = cardIntTodo(); if (ci) add('warn', `The AIB statement of ${dshort(ci.c.S)} is out: type the interest it charged (“Interest Charged”, page 1). Until then the system uses an estimate, about ${money(ci.est)}.`, 'debts', 'Type it'); }
-  const cc = cardCycles(); if (cc && cs && cs.bal > 0){ const nd = cc.list.map(x => x.D).filter(d => d && d >= t).sort((a, b) => a - b)[0]; if (nd && dayDiff(t, nd) <= 7) add('warn', `AIB card payment due ${fWD.format(nd)} ${dshort(nd)}. Pay it from AIB savings.`, 'debts', 'Open'); }
-  { const m0 = monthResult(t), e = m0 && !m0.partial ? monthEnding(m0) : null; if (fl.configured && e != null && e < 0) add('bad', `This month is on track to end ${money(-e)} in the red.`, 'balance', 'See why'); }
-  { const pn = payToDo(); if (pn.length){ const n = k => pn.filter(x => x.kind === k).length, parts = [n('step') ? `${n('step')} transfer${n('step') > 1 ? 's' : ''}` : '', n('move') ? `${n('move')} Vault move${n('move') > 1 ? 's' : ''}` : '', n('card') ? 'the card payment' : '', n('stmt') ? 'the card statement' : '', n('bill') ? `${n('bill')} bill${n('bill') > 1 ? 's' : ''}` : ''].filter(Boolean); add(pn.some(x => x.late && (x.kind === 'move' || (x.kind === 'bill' && !['bills', 'card'].includes(x.b.account)))) ? 'bad' : 'warn', `To do today in Pay: ${parts.join(', ')}.`, 'pay', 'Open Pay'); } }
+  todoSetup(C, add); todoMonth(C, add);
   for (const v of varTodos()) add(v.st, v.txt, 'bills', 'Log it');
   for (const v of energyTodos()) add(v.st, v.txt, 'energy', 'Electricity');
   for (const v of reviewTodos()) out.push({id: '', ...v});
   for (const v of cmpTodos()) out.push(v);
   for (const v of prepTodos()){ if (v.top) out.unshift(v); else out.push(v); }   // Ready: an official warning goes first
+  todoRecords(C, out); todoBills(C, add); todoPots(C, add); todoIncome(C, add); todoWeek(C, add, out);
+  const rank = {bad: 0, warn: 1, idle: 2, ok: 3};
+  return out.sort((a, b) => rank[a.st] - rank[b.st]);
+}
+function todoSetup({t, fl, cs}, add){   // what's missing, what doesn't add up, and money to send to Brazil
+  if (!fl.configured) add('bad', 'Add both incomes and the weekly transfers.', 'setup', 'Open Settings');
+  if (!S.bills.length) add('bad', 'Add your bills, starting with the mortgage.', 'bills', 'Add bills');
+  if (!cs) add('warn', 'Log the AIB card balance from the AIB app.', 'week', 'Money check');
+  const r = latestRec(); if (r && !r.ok && !r.note) add('bad', `${recHeadline(r)} Log it or explain it.`, 'week', 'Sort it out');
+  { const H = selfCheck(), bad = H.items.filter(x => x.st === 'bad'); if (bad.length) add('bad', `System check: ${bad.length === 1 ? bad[0].t : `${bad.length} things in the data don’t fit`}. Settings → System shows what and where.`, 'system', 'Open'); }
+  if (fl.configured) for (const m of dueMoves(addDays(t, 1), 3).filter(m => m.abroad && !moveDone(m))) add('idle', `${m.b.name}: send ${money(m.amount)} through Wise on ${fWD.format(m.sendBy)} ${dshort(m.sendBy)}. It shows up in Pay that day.`, '', '');
+}
+function todoMonth({t, fl, cs}, add){   // the card's statement and payment, the month heading for red, and what to do today in Pay
+  { const ci = cardIntTodo(); if (ci) add('warn', `The AIB statement of ${dshort(ci.c.S)} is out: type the interest it charged (“Interest Charged”, page 1). Until then the system uses an estimate, about ${money(ci.est)}.`, 'debts', 'Type it'); }
+  const cc = cardCycles(); if (cc && cs && cs.bal > 0){ const nd = cc.list.map(x => x.D).filter(d => d && d >= t).sort((a, b) => a - b)[0]; if (nd && dayDiff(t, nd) <= 7) add('warn', `AIB card payment due ${fWD.format(nd)} ${dshort(nd)}. Pay it from AIB savings.`, 'debts', 'Open'); }
+  { const m0 = monthResult(t), e = m0 && !m0.partial ? monthEnding(m0) : null; if (fl.configured && e != null && e < 0) add('bad', `This month is on track to end ${money(-e)} in the red.`, 'balance', 'See why'); }
+  { const pn = payToDo(); if (pn.length){ const n = k => pn.filter(x => x.kind === k).length, parts = [n('step') ? `${n('step')} transfer${n('step') > 1 ? 's' : ''}` : '', n('move') ? `${n('move')} Vault move${n('move') > 1 ? 's' : ''}` : '', n('card') ? 'the card payment' : '', n('stmt') ? 'the card statement' : '', n('bill') ? `${n('bill')} bill${n('bill') > 1 ? 's' : ''}` : ''].filter(Boolean); add(pn.some(x => x.late && (x.kind === 'move' || (x.kind === 'bill' && !['bills', 'card'].includes(x.b.account)))) ? 'bad' : 'warn', `To do today in Pay: ${parts.join(', ')}.`, 'pay', 'Open Pay'); } }
+}
+function todoRecords({t}, out){   // the monthly backup, and a transfer to Brazil with no bill behind it
   if (S.canWrite && S.bills.length && pd(st().startedOn) && dayDiff(pd(st().startedOn), t) >= 7){ const a = backupAge(); if (a == null || a >= 31) out.push({st: 'idle', txt: a == null ? 'Download a backup of the system: one file with everything in it. Once a month is enough.' : `Monthly backup: the last one was ${a} days ago.`, act: 'backup', id: '', btn: 'Download'}); }
   for (const w of wiseUnlinked()) out.push({st: 'warn', txt: `${w.purpose || 'A transfer to Brazil'} (${dshort(pd(w.date))}, ${money(w.eur)}) isn’t a bill yet: nothing is being saved for the next transfer. Add it as a bill.`, act: 'wiseToBill', id: w.id, btn: 'Add it'});
+}
+function todoBills({t}, add){   // will every bill find its money, is there room for new ones, and next year's instalments
   { const A = dueAdvice(), R = billRoom();   // will every bill find its money, and is there room for new ones
     if (A && A.base.first && dayDiff(t, A.base.first.d) <= 45) add('bad', `Bills Pocket: ${money(A.base.first.short)} short on ${fWD.format(A.base.first.d)} ${dshort(A.base.first.d)}, when ${A.base.first.name} goes out. Move ${money(A.topUp)} from the Joint account to the Bills Pocket before then${A.list.length ? `, or move ${A.list[0].b.name} to the ${ordinal(A.list[0].day)} for good` : ''}.`, 'budget', 'See why');
     else if (A) for (const x of A.list.slice(0, 1)) add('idle', `${x.b.name} would sit better on the ${ordinal(x.day)} of the month.`, 'budget', 'See why');
@@ -6048,6 +6101,8 @@ function todoList(){
     if (dl < 0) add('warn', `${b.name}: this period’s ${x.n} payment${x.n === 1 ? '' : 's'} ended on ${dshort(x.last.d)}. When next year’s amount arrives, add it (Bills → Edit → Add the next period), so the Bills Pocket and the plan keep up.`, 'bills', 'Open Bills');
     else if (dl <= 30) add('idle', `${b.name}: the last payment (${x.last.k}/${x.last.n}) is on ${dshort(x.last.d)}. When next year’s amount arrives, add it in Bills → Edit → Add the next period.`, 'bills', 'Open Bills');
   }
+}
+function todoPots({t}, add){   // money taken from the emergency fund, the Bills Pocket or the Vault: put it back
   { const e = efSeries();   // the emergency fund: refill what was taken, and count its interest
     for (const o of e.outs) if (dayDiff(pd(o.day), t) <= 365 && e.amount < o.before - .5) add('warn', `Refill the emergency fund: ${money(-o.v)} was taken out on ${dshort(pd(o.day))}${o.m && o.m.note ? ` (${o.m.note})` : ''}. It’s ${money(o.before - e.amount)} short of where it was.`, 'transfers', 'Log a move');
     for (const [acc, rule, nm] of [['bills', 1, 'the Bills Pocket'], ['vaults', 2, 'the Vault']]){   // money taken from a pot by hand: put it back
@@ -6057,12 +6112,16 @@ function todoList(){
           : buys.length === g.length ? `it paid for ${g.length} purchases since ${dshort(pd(from))}: ${g.map(nm).join(' and ')}` : `it was used ${g.length} times since ${dshort(pd(from))}`; })()} (rule ${rule}). When it’s back, log the move to ${nm} (not as the planned transfer).`, 'transfers', 'Log a move');
     }
     if (efInUse() && !(efAer() > 0)) add('idle', `If the emergency fund is in a savings account that pays interest, add its rate (AER) in Settings → Plan settings so the fund counts it. Revolut’s joint savings shows ${fact('revolutSavingsAer').v}% now.`, 'setup', 'Add it'); }
+}
+function todoIncome({t, ws}, add){   // paydays moved by a bank holiday, social welfare changes, the Irish rules and rates
   for (const who of ['thiago', 'rory']){ const p2 = payDate(who, ws), p3 = payDate(who, addDays(ws, 7));   // bank holidays: the money comes early
     for (const x of [p2, p3]) if (x && x.moved && x.d >= t && dayDiff(t, x.d) <= 7) add('idle', `${x.why}: ${WHO_INC[who].name}’s ${incWord(who)} comes on ${fWD.format(x.d)} ${dshort(x.d)} instead of ${fWD.format(x.base)} ${dshort(x.base)}. Pay shows the transfer that day.`, 'pay', 'Open Pay'); }
   for (const who of ['thiago', 'rory'].filter(w => incType(w) === 'welfare')){ const ib = fact('illnessBenefit'), nx = ib.next, inc = incWeekly(who), nm = WHO_INC[who].name;   // social welfare changes that touch our income
     if (nx && pd(nx.from) && inc > 0 && inc < num(nx.v) - .005 && dayDiff(t, pd(nx.from)) <= 21 && dayDiff(pd(nx.from), t) <= 35) add('idle', `Social welfare goes up from ${dlong(pd(nx.from))} (Illness Benefit maximum ${money(ib.v).replace('.00', '')} → ${money(nx.v).replace('.00', '')} a week). When ${nm}’s first new payment lands, change the income in Settings so every transfer follows.`, 'setup', 'Open Settings');
     const cb = fact('christmasBonus'), w = pd(cb.week); if (w && inc > 0 && dayDiff(t, w) <= 21 && dayDiff(w, t) <= 7) add('idle', `Christmas Bonus, week of ${dshort(w)}: Illness Benefit gets it only after 12 months on the payment. If it arrives, log it in Transfers (${nm} → Joint, an extra move) and decide together where it goes.`, 'transfers', 'Transfers'); }
   if (dayDiff(pd(factsCheckedOn()), t) > 9) add('idle', `Irish rules and rates were last checked on ${dshort(pd(factsCheckedOn()))}. The weekly check may have missed a week: see Settings → Rules.`, 'rules', 'See them');
+}
+function todoWeek({t, ws, wsI, fl}, add, out){   // the week: card charges to log, the money check, the advisor, the plan, the report to Rory
   for (const e of S.cardlog.filter(e => e.type === 'scheduled' && !S.spending.some(x => x.sched === e.id))) out.push({st: 'bad', txt: `${e.note || 'A card charge'} (${money(e.amount)}, on the card ${dshort(pd(e.date))}) isn’t logged as a purchase yet, so Rory’s report doesn’t show it. Say who it’s for, need or want, and whether Rory knew.`, act: 'schLog', id: e.id, btn: 'Log it'});
   const lastChk = sortedChecks().pop();
   if (fl.configured && (!lastChk || pd(lastChk.date) < ws)) add('idle', 'This week’s money check: copy 6 balances, 2 minutes.', 'week', 'Do it');
@@ -6075,8 +6134,6 @@ function todoList(){
   if (fl.configured){ const m = planMoves(planState()).find(x => (x.st === 'bad' || x.st === 'warn') && !/money check|left the accounts|isn’t logged|more than expected|Bills Pocket review|tested day by day/.test(x.t)); if (m) add(m.st, m.t.replace(/<[^>]+>/g, ''), 'plan', 'Open the plan'); }
   const wk = S.weeks[wsI] || {};
   if (fl.configured) add(wk.sent ? 'ok' : 'idle', wk.sent ? `This week’s report went to Rory on ${dshort(pd(wk.sent))}.` : 'Send this week’s report to Rory.', 'week', wk.sent ? '' : 'Report');
-  const rank = {bad: 0, warn: 1, idle: 2, ok: 3};
-  return out.sort((a, b) => rank[a.st] - rank[b.st]);
 }
 function checkPanel(){
   const v = checkVerdict();
@@ -6484,53 +6541,35 @@ async function stepSave(wsI, id, quick){
 
 /* ---------- PDF ---------- */
 function loadScript(src){ return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('Could not load ' + src)); document.head.appendChild(s); }); }
+async function pdfBlob(ws){   // Rory's report as an A4 PDF: page 1 and page 2 of his live report, each on its own sheet
+  if (!window.html2canvas) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+  if (!window.jspdf) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+  const D = reportData(ws), stage = $('#pdfStage');
+  stage.innerHTML = `<div class="paper">${reportBoard(ws, true, D)}</div><div class="paper">${reportDetails(ws, true, D)}</div>`;
+  if (document.fonts && document.fonts.ready) await document.fonts.ready;
+  const pdf = new window.jspdf.jsPDF({unit: 'mm', format: 'a4'}), nodes = Array.from(stage.children);
+  for (let i = 0; i < nodes.length; i++){
+    const canvas = await window.html2canvas(nodes[i], {scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false, windowWidth: 900});
+    if (i) pdf.addPage();
+    pdfSheet(pdf, canvas);
+  }
+  return pdf.output('blob');
+}
+function pdfSheet(pdf, canvas){   // one page of the report, scaled to fit an A4 sheet (210 × 297 mm) and centred
+  const pw = 210, ph = 297, hh = Math.min(ph, canvas.height * pw / canvas.width), ww = hh === ph ? canvas.width * ph / canvas.height : pw;
+  pdf.addImage(canvas.toDataURL('image/jpeg', 0.86), 'JPEG', (pw - ww) / 2, 0, ww, hh);
+}
 async function makePdf(){
   const dl = await appUse('downloads');
   const ws = S.reportWeek ? pd(S.reportWeek) : weekStartOf(today());
   S.busy = true; render();
   const lookWas = document.documentElement.dataset.look; document.documentElement.dataset.look = 'classic';   // Rory's PDF keeps its own look
-  const stage = $('#pdfStage');
-  try {
-    if (!window.html2canvas) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
-    if (!window.jspdf) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
-    const D = reportData(ws);
-    stage.innerHTML = `<div class="paper fit">${reportBoard(ws, true, D)}</div><div class="paper fit">${reportDetails(ws, true, D)}</div>`;
-    if (document.fonts && document.fonts.ready) await document.fonts.ready;
-    const pdf = new window.jspdf.jsPDF({unit: 'mm', format: 'a4'});
-    const pw = 210, ph = 297, SCALE = 2;
-    let p = 0;
-    const nodes = Array.from(stage.children);
-    for (let ni = 0; ni < nodes.length; ni++){
-      const node = nodes[ni];
-      // safe places to cut: the bottom edge of every section, so no panel is sliced in half
-      const top0 = node.getBoundingClientRect().top;
-      const cuts = Array.from(node.querySelectorAll('.rep > *, .rep > .two > *, .glance > *, .glance > .gcols > *')).map(el => Math.round((el.getBoundingClientRect().bottom - top0 + 6) * SCALE)).sort((a, b) => a - b);
-      const canvas = await window.html2canvas(node, {scale: SCALE, backgroundColor: '#ffffff', useCORS: true, logging: false, windowWidth: 900});
-      const pageH = Math.floor(canvas.width * ph / pw);
-      const addSlice = (y, h, fitWhole) => {
-        const c = document.createElement('canvas'); c.width = canvas.width; c.height = h;
-        const g = c.getContext('2d'); g.fillStyle = '#ffffff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(canvas, 0, y, canvas.width, h, 0, 0, canvas.width, h);
-        if (p++) pdf.addPage();
-        const img = c.toDataURL('image/jpeg', 0.86);
-        if (fitWhole){ const hh = Math.min(ph, h * pw / canvas.width), ww = hh === ph ? canvas.width * ph / h : pw; pdf.addImage(img, 'JPEG', (pw - ww) / 2, 0, ww, hh); }
-        else pdf.addImage(img, 'JPEG', 0, 0, pw, h * pw / canvas.width);
-      };
-      if (node.classList.contains('fit')){ addSlice(0, canvas.height, true); continue; }   // pages 1 and 2 always fit on one sheet each
-      let y = 0;
-      while (y < canvas.height - 4){
-        let end = Math.min(canvas.height, y + pageH);
-        if (end < canvas.height){ const best = cuts.filter(cu => cu > y + pageH * 0.35 && cu <= y + pageH).pop(); if (best) end = best; }
-        addSlice(y, end - y, false); y = end;
-      }
-    }
-    const blob = pdf.output('blob');
-    stage.innerHTML = ''; document.documentElement.dataset.look = lookWas;
-    S.busy = false; render();
-    try { await dl.save({filename: `Week by Week ${iso(ws)}.pdf`, data: blob}); toast('PDF saved'); }
-    catch (e) { if (e && e.code !== 'declined') toast(e.code === 'rate_limited' ? 'A save is already waiting. Try again in a moment.' : 'The PDF couldn’t be saved here.'); }
-  } catch (e) {
-    console.warn(e); stage.innerHTML = ''; document.documentElement.dataset.look = lookWas; S.busy = false; render(); toast('The PDF couldn’t be made. Try again.');
-  }
+  const done = () => { $('#pdfStage').innerHTML = ''; document.documentElement.dataset.look = lookWas; S.busy = false; render(); };
+  let blob;
+  try { blob = await pdfBlob(ws); done(); }
+  catch (e) { console.warn(e); done(); toast('The PDF couldn’t be made. Try again.'); return; }
+  try { await dl.save({filename: `Week by Week ${iso(ws)}.pdf`, data: blob}); toast('PDF saved'); }
+  catch (e) { if (e && e.code !== 'declined') toast(e.code === 'rate_limited' ? 'A save is already waiting. Try again in a moment.' : 'The PDF couldn’t be saved here.'); }
 }
 
 /* ---------- events ---------- */
