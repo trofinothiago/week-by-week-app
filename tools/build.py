@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """Build the app from the page.
 
-src/week-by-week.html is the page exactly as it is inside Claude (copied from the live artifact, tested with the kit).
+src/week-by-week.html is the page (tested with the kit).
 This writes:
   index.html   the page + the app's head (icon, manifest, app.css) + its data connection (config, Supabase, bridge),
                placed right after <body>, where the kit puts its mock.
   import.html  the account page (sign out, bring in a backup), with the page's own stylesheet so it looks the same.
-Nothing in the page's code changes.
 
 usage: python3 tools/build.py
 """
@@ -30,8 +29,7 @@ once(page, '</head>', '</head>'); once(page, '<body>', '<body>')
 index = page.replace('</head>', APP_HEAD + '</head>', 1).replace('<body>', '<body>' + APP_SCRIPTS, 1)
 open(os.path.join(ROOT, 'index.html'), 'w', encoding='utf-8').write(index)
 
-styles = re.findall(r'<style>.*?</style>', page, flags=re.S)
-style = max(styles, key=len)   # the page's stylesheet (the small one in <head> is Claude's frame)
+style = re.search(r'<style>.*?</style>', page, flags=re.S).group(0)   # the page's stylesheet
 tpl = open(os.path.join(ROOT, 'app/import.tpl.html'), encoding='utf-8').read()
 imp = tpl.replace('{{APP_HEAD}}', APP_HEAD).replace('{{PAGE_STYLE}}', style).replace('{{APP_SCRIPTS}}', APP_SCRIPTS + f'<script src="{v("app/import.js")}"></script>')
 open(os.path.join(ROOT, 'import.html'), 'w', encoding='utf-8').write(imp)

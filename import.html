@@ -4,6 +4,7 @@
 <style>
 /* Layout: a household ledger. A strip of four bucket columns up top, ruled statement sheets below, one week at a time. */
 :root{
+  color-scheme:light; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
   --bg:#EDF1EF; --sheet:#FAFCFB; --ink:#16201B; --muted:#56655E; --rule:#CFD8D3; --rule2:#E2E8E5;
   --bills:#1E6A49; --joint:#2D5B98; --pocket:#6A4AA6; --personal:#866427;
   --ok:#1E7A4F; --warn:#A0560B; --bad:#AE352A;
@@ -32,6 +33,9 @@
   --shield-bg:#E2EAE6; --shield-fg:#111814; --shield-mut:#46544D;
   --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; color-scheme:dark}
 *{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+img{max-width:100%}
+[hidden]:not([hidden=until-found i]){display:none!important}
 body{background:var(--bg);color:var(--ink);font:16px/1.5 var(--f-body);margin:0}
 .wrap{max-width:1100px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 56px}
 h1,h2,h3,h4{font-family:var(--f-display);text-wrap:balance;margin:0;line-height:1.15}
@@ -752,5 +756,5 @@ body.sheet-open{overflow:hidden}
 </style>
 </head><body>
 <div class="wrap"><div class="ios-title"><div class="app-brand"><picture class="app-mark"><source srcset="icon-dark-180.png" media="(prefers-color-scheme: dark)"><img src="icon-180.png" alt="" width="56" height="56"></picture><div><h1>Account</h1><p>Week by Week</p></div></div></div><main id="app-acct" class="stack"></main></div>
-<script src="app/config.js?v=8cddd8ecdf"></script><script src="app/vendor/supabase.js?v=4bc1644cb4"></script><script src="app/bridge.js?v=300f0ec86e"></script><script src="app/import.js?v=f772ee788e"></script>
+<script src="app/config.js?v=8cddd8ecdf"></script><script src="app/vendor/supabase.js?v=4bc1644cb4"></script><script src="app/bridge.js?v=391e2e3433"></script><script src="app/import.js?v=bf81381110"></script>
 </body></html>

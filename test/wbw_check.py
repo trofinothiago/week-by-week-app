@@ -162,7 +162,7 @@ with sync_playwright() as p:
         unused = [c for c in classes if not _re.search(r'(?<![\w.-])' + _re.escape(c) + r'(?![\w-])', rest) and not any(c.startswith(p) for p in prefixes)]
         check('styles: every class in the stylesheet is used by the page', not unused, unused[:12])
         patches = [t for t, pat in [('a <style> written from JavaScript', r'<style>\$\{|<style>[^<]*\{[^<]*</style>'), ('console.log', r'console\.log\('), ('debugger', r'\bdebugger\b'),
-                   ('the retired Classic look (S.look)', r'S\.look\b'), ('the retired weekly budgets (kind budget)', r"kind\s*[!=]==\s*'budget'"), ('a patch marker', r'(?i)\b(patch_v?\d|monkey.?patch|_orig[A-Z(])')] if _re.search(pat, js)]
+                   ('the retired Classic look (S.look)', r'S\.look\b'), ('the retired weekly budgets (kind budget)', r"kind\s*[!=]==\s*'budget'"), ('a patch marker', r'(?i)\b(patch_v?\d|monkey.?patch|_orig[A-Z(])'), ('a condition that can never change (&& false, || true)', r'&&\s*false\b|\|\|\s*true\b'), ('a leftover of the page inside Claude', r'window\.claude|shared store|inside Claude|claude:viewport')] if _re.search(pat, js)]
         check('code: no patch leftovers (styles from JavaScript, console.log, retired features, patch markers)', not patches, patches)
         acts = set(_re.findall(r'data-act="([A-Za-z]\w*)"', js)); missing = sorted(x for x in acts if f"case '{x}'" not in js and not _re.search(r"\b(a|act)\s*===\s*'" + x + "'", js))
         check('code: every button the page draws has an action that handles it', not missing, missing[:10])
@@ -987,8 +987,6 @@ with sync_playwright() as p:
         rf = ev(PROBE); ev("() => { window.__as = null; S.canWrite = true; render(); }")
         check('Notifications: Rory turns them on for his own phone and saves his own choices (Thiago’s stay as they were)', len(dev) == 1 and dev[0]['user_id'].endswith('b2') and rp.get('moves') == 'evening' and rp.get('shop') == 'evening' and rp.get('quiet') is None and tp2.get('answers') == 'evening', {'dev': dev, 'prefs': P})
         check('Notifications: Rory’s view with the card fits the phone', not rf, rf[:6])
-        ev("() => { const keep = S.ntf; S.ntf = null; S.tab = 'settings'; S.sub.settings = 'setup'; render(); window.__k = keep; }"); vc = view(); ev("() => { S.ntf = window.__k; render(); }")
-        check('Notifications: inside Claude (no notifications there) the card doesn’t show', 'On this phone' not in vc)
     step('notifications', f_notify)
     # ---- the budget: the shop, cigarettes and drinks on their own lines; the projected month and the real month so far ----
     def f_budget():

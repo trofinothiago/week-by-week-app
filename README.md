@@ -2,10 +2,10 @@
 
 Thiago and Rory's household money system, as an app of our own. Not for sale.
 
-- `src/week-by-week.html` is the page as it is inside Claude, plus what only the app has (Rory's answers from his own
+- `src/week-by-week.html` is the page, with what only the app has (Rory's answers from his own
   account, step 2a; notifications, step 2b). Every change is tested with the app's kit before it's published.
 - `python3 tools/build.py` makes `index.html` (the page + its data connection) and `import.html` (the account page).
-- `app/bridge.js` gives the page what it asks for (`window.claude.use('db' | 'user' | 'downloads' | 'notify')`) from Supabase:
+- `app/bridge.js` gives the page what it asks for (`window.wbw.use('db' | 'user' | 'downloads' | 'account' | 'notify')`) from Supabase:
   sign-in, the `docs` table, live updates, and notifications on this phone. `sw.js` only shows pushed notifications and
   opens the app on a tap (it caches nothing). The sender is the Edge Function in `supabase/functions/push`. `app/config.js` holds the project URL and the publishable key (public by design).
 - `supabase/001_base.sql`: the tables and the locks (Row Level Security). Thiago (editor) writes; Rory (viewer) reads;

@@ -1,7 +1,6 @@
 // Week by Week app: the page's connection to its data, on Supabase.
-// The page asks for window.claude.use('db' | 'user' | 'downloads' | 'notify'), as it does inside Claude (where 'notify' doesn't exist)
-// (and as the test kit's mock.js does). Here they come from Supabase: sign-in, the docs table, live updates.
-// The page itself doesn't change. The locks live in the database (supabase/001_base.sql).
+// The page asks window.wbw.use('db' | 'user' | 'downloads' | 'account' | 'notify'); they come from Supabase:
+// sign-in, the docs table, live updates, notifications on this phone. The locks live in the database (supabase/001_base.sql).
 (() => {
   const CFG = window.WBW_CONFIG || {};
   const hash = new URLSearchParams(location.hash.slice(1));
@@ -231,7 +230,7 @@
   }};
 
   /* ---------- notifications on this phone (web push: the app opened from the Home Screen, iOS 16.4+) ---------- */
-  // The page asks window.claude.use('notify'). Each of us manages only our own phones and choices (supabase/003_notifications.sql).
+  // The page asks window.wbw.use('notify'). Each of us manages only our own phones and choices (supabase/003_notifications.sql).
   const PUSH = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
   const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const HOME = () => navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
@@ -287,7 +286,7 @@
     }
   };
 
-  window.claude = {use: async name => {
+  window.wbw = {use: async name => {
     if (name === 'downloads') return downloads;
     if (name !== 'db' && name !== 'user' && name !== 'account' && name !== 'notify') return null;
     await (ready ||= start());

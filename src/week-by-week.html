@@ -1,12 +1,15 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Week by Week</title>
-<meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@600;700;800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;600&display=swap">
 <style>
 /* Layout: a household ledger. A strip of four bucket columns up top, ruled statement sheets below, one week at a time. */
 :root{
+  color-scheme:light; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
   --bg:#EDF1EF; --sheet:#FAFCFB; --ink:#16201B; --muted:#56655E; --rule:#CFD8D3; --rule2:#E2E8E5;
   --bills:#1E6A49; --joint:#2D5B98; --pocket:#6A4AA6; --personal:#866427;
   --ok:#1E7A4F; --warn:#A0560B; --bad:#AE352A;
@@ -35,6 +38,9 @@
   --shield-bg:#E2EAE6; --shield-fg:#111814; --shield-mut:#46544D;
   --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; color-scheme:dark}
 *{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+img{max-width:100%}
+[hidden]:not([hidden=until-found i]){display:none!important}
 body{background:var(--bg);color:var(--ink);font:16px/1.5 var(--f-body);margin:0}
 .wrap{max-width:1100px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 56px}
 h1,h2,h3,h4{font-family:var(--f-display);text-wrap:balance;margin:0;line-height:1.15}
@@ -753,6 +759,7 @@ body.sheet-open{overflow:hidden}
 .lrow .pbtns{grid-area:b;display:flex;flex-wrap:wrap;gap:4px 18px;justify-content:flex-start}
 .lrow.prow.done .n b{color:var(--muted)}
 </style>
+</head><body>
 
 <div class="wrap">
   <header class="top">
@@ -763,7 +770,7 @@ body.sheet-open{overflow:hidden}
     <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="weekpill" id="weekpill"></span></span>
   </header>
   <main id="view"></main>
-  <p class="sync" id="sync">Connecting to the shared store…</p>
+  <p class="sync" id="sync">Connecting…</p>
 </div>
 <div class="ios-nav" id="iosnav" aria-hidden="true"></div>
 <nav class="iostabs" id="iostabs" aria-label="Sections"></nav>
@@ -937,7 +944,7 @@ const occName = (b, d) => { if (!b || b.freq !== 'instal') return b ? b.name : '
 
 /* ---------- state ---------- */
 const S = {
-  tab:'today', sub:{money:'balance', plan:'plan', settings:'setup'}, todayOpen:'', db:null, noDb:false, canWrite:true, canAnswer:false, ntf:null, dlP:Promise.resolve(null), sampleP:Promise.resolve(null),
+  tab:'today', sub:{money:'balance', plan:'plan', settings:'setup'}, todayOpen:'', db:null, noDb:false, canWrite:true, canAnswer:false, ntf:null,
   settings:{}, plan:{}, facts:{}, advice:{}, energy:{}, health:{}, assets:[], bills:[], cardlog:[], spending:[], wishlist:[], changelog:[], weeks:{}, wise:[], checks:[], klarna:[], loans:[], moves:[], compare:[], answers:[], prep:[], prepCfg:{},
   got:{}, reportWeek:null, billOpen:false, err:'', busy:false,
   f:{
@@ -2265,7 +2272,7 @@ function billForm(){
       ${field('bill', 'account', 'Paid from', {select: [['bills','Bills Pocket (in the Joint account)'],['joint','Joint account (day to day)'],['card','Charged to the AIB credit card'],['rory',"Rory's personal account"],['thiago',"Thiago's personal account"],['nubank','Nubank (Brazil), sent via Wise']]})}
       ${billChangeBox(b, isM)}
       ${b.account === 'nubank' ? field('bill', 'brlAmount', 'Amount in reais (R$)', {money:true, ph:'900', hint:'What the bill costs in Brazil'}) : ''}
-      ${field('bill', 'cat', 'Category', {select: [['auto', `Automatic${autoCat(b.name) ? ` (${autoCat(b.name)})` : ''}`], ...BILL_CAT_NAMES.map(c => [c, c])], hint: b.cat && b.cat !== 'auto' ? '' : 'Claude decides if the name isn’t clear'})}
+      ${field('bill', 'cat', 'Category', {select: [['auto', `Automatic${autoCat(b.name) ? ` (${autoCat(b.name)})` : ''}`], ...BILL_CAT_NAMES.map(c => [c, c])], hint: b.cat && b.cat !== 'auto' ? '' : 'From the name; Other when the name doesn’t say'})}
       ${field('bill', 'note', 'Note', {ph:'Optional'})}
     </div>
     ${isI ? instFormBits(b) : ''}
@@ -5410,7 +5417,7 @@ function cardIntPanel(){
 }
 
 /* ---------- system health: the page checks itself every time it opens; Claude runs the full check every Monday ---------- */
-const APP_VERSION = '2026.11.12';
+const APP_VERSION = '2026.11.12-2';
 function selfCheck(){   // cheap checks on the data, run on every open: things that don't fit, and the weekly tasks that should have run
   const key = `${S._rt}|${iso(today())}`; if (S._hc && S._hc.k === key) return S._hc.v;
   const items = [], t = today(), add = (st2, area, txt) => items.push({st: st2, area, t: txt});
@@ -5523,7 +5530,7 @@ function vHealth(){
     </section>` : ''}
   </div>`;
 }
-/* ---------- backup: everything in the shared store, in one file ---------- */
+/* ---------- backup: everything in the app, in one file ---------- */
 const DATA_COLLS = ['bills', 'cardlog', 'spending', 'wishlist', 'changelog', 'weeks', 'wise', 'checks', 'klarna', 'loans', 'assets', 'moves', 'compare', 'answers', 'prep'];   // every collection the page uses: loaded on open and saved in the backup. A new feature's collection goes here, and nowhere else
 const BK_COLLS = DATA_COLLS.filter(k => k !== 'weeks');
 function backupData(){
@@ -5534,8 +5541,7 @@ function backupData(){
     ...Object.fromEntries(BK_COLLS.map(k => [k, (S[k] || []).map(strip)]))};
 }
 async function backupDownload(){
-  const dl = await S.dlP;
-  if (!dl){ toast('Saving files isn’t available in this view.'); return; }
+  const dl = await appUse('downloads');
   const data = backupData(), blob = new Blob([JSON.stringify(data, null, 1)], {type: 'application/json'});
   try {
     await dl.save({filename: `Week by Week backup ${iso(today())}.json`, data: blob});
@@ -5552,7 +5558,7 @@ function backupPanel(){
     <p class="mut" style="font-size:.88rem">It saves every bill, purchase, transfer, money check, card payment, electricity reading, setting and the whole History as one file (.json). Keep it in iCloud Drive or Files. If anything is ever deleted by mistake, send the file to Claude and it can be put back.</p>
     <div class="actions"><button class="btn strong" data-act="backup">⬇ Download a backup</button></div></section>`;
 }
-/* ---------- notifications on this phone (only in our own app: window.claude.use('notify'); each of us chooses for ourselves) ---------- */
+/* ---------- notifications on this phone (the app's data layer gives 'notify'; each of us chooses for ourselves) ---------- */
 const NTF_KINDS = {viewer: [['asks', 'Thiago is asking you'], ['decided', 'Decisions, and anything decided without you'], ['buys', 'Purchases and card charges'], ['shop', 'The shop, cigarettes and drinks'], ['pots', 'Bills Pocket, Vault or emergency fund used'], ['moves', 'Bills paid, transfers and money added'], ['edits', 'Anything changed, undone or deleted'], ['report', 'The weekly report']],
   editor: [['answers', 'Rory’s answers']]};
 const NTF_STATE = {install: 'To get notifications, open Week by Week from its icon on the Home Screen (in Safari: Share → Add to Home Screen). The iPhone only allows them there, from iOS 16.4.',
@@ -5669,7 +5675,6 @@ function iosCards(){   // on the iPhone, every table reads as one card per row
   for (const r of document.querySelectorAll('#view .lrow')){ const x = r.querySelector('.a'); if (x && x.textContent.trim().length > 24 && / /.test(x.textContent.trim())) r.classList.add('lwide'); }   // a long answer goes under the name
   for (const d of document.querySelectorAll('#view .dleg .dl')) if (d.textContent.trim().length > 30) d.classList.add('dwide');   // a long legend label gets its own line
   for (const t of document.querySelectorAll('#view table')){
-    if (t.closest('.ios-sheet') && false) continue;
     const heads = [...t.querySelectorAll('thead th')].map(th => th.textContent.trim());
     if (!heads.length) continue;
     t.classList.add('cards'); t.closest('.tablewrap')?.classList.add('cards');
@@ -6226,7 +6231,7 @@ function render(){
   try { if (ae && 'selectionStart' in ae) { s0 = ae.selectionStart; s1 = ae.selectionEnd; } } catch (e) {}
   $('#weekpill').textContent = `Week of ${weekLabel(weekStartOf(today()))}`;
   let html = '';
-  if (S.noDb) html += `<div class="banner" style="margin-bottom:16px">The shared store isn’t available in this view, so nothing can be saved or loaded. Open the page inside Claude while signed in.</div>`;
+  if (S.noDb) html += `<div class="banner" style="margin-bottom:16px">The app couldn’t reach its data, so nothing can be saved or loaded. Close the app and open it again; if it keeps happening, check the internet.</div>`;
   document.body.classList.toggle('rorymode', !S.canWrite && !S.noDb);
   const iosOn = S.canWrite || S.noDb;
   document.documentElement.dataset.look = iosOn ? 'ios' : 'classic';
@@ -6238,7 +6243,7 @@ function render(){
   if (iosOn) iosCards();
   if (fid){ const el = document.getElementById(fid); if (el && el !== document.activeElement){ el.focus({preventScroll:true}); try { if (s0 != null) el.setSelectionRange(s0, s1); } catch (e) {} } }
   const loaded = ['settings','plan','facts','bills','cardlog','spending','wishlist','changelog','weeks','wise','checks','klarna','loans','assets','moves'].every(k => S.got[k]);
-  $('#sync').textContent = S.noDb ? 'Not connected.' : loaded ? `Saved in the shared store · ${S.bills.length} bills · ${S.spending.length} purchases logged` : 'Loading from the shared store…';
+  $('#sync').textContent = S.noDb ? 'Not connected.' : loaded ? `Saved · ${S.bills.length} bills · ${S.spending.length} purchases logged` : 'Loading…';
 }
 function toast(msg){ const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => { t.hidden = true; }, 2600); }
 
@@ -6256,19 +6261,9 @@ function billAgreeNeeded(b){ if (!b) return false; if (!b._id) return true; cons
 function billAgreeBox(b){ if (!billAgreeNeeded(b)) return ''; return `<div class="fld"><span class="label">Did you decide this with Rory?</span>${seg('bill', 'agree', [['yes', 'Yes, together'], ['no', 'Not yet'], ['na', 'Not a choice']])}<small class="mut">“Not a choice”: a price rise or a real bill that arrived. Rory sees every bill change in his report, with this answer.</small></div>`; }
 async function logChangeAg(ag, kind, text){ return logChange(kind, text + (AGREE_TXT[ag] || ''), AGREE_TXT[ag] ? {rory: ag, short: text} : {}); }
 function writeErr(e){ console.warn(e); const c = e && e.code; S.err = c === 'quota_exceeded' ? 'The store is full. Delete old entries to make room.' : c === 'invalid_argument' ? 'This view can’t save changes.' : 'Couldn’t save. Check the connection and try again.'; if (c === 'invalid_argument') S.canWrite = false; render(); }
-const needDb = () => { if (!S.db){ toast('Not connected to the shared store.'); return false; } return true; };
+const needDb = () => { if (!S.db){ toast('Not connected. Close the app and open it again.'); return false; } return true; };
 
 function billSummary(b){ return `${b.name} (${money(b.amount)}, ${freqText(b).toLowerCase()}, ${ACC[b.account]?.short || ''}${b.cat ? `, ${b.cat}` : ''})`; }
-async function askCat(name, note){
-  let sample = null; try { sample = await S.sampleP; } catch (e) {}
-  if (!sample || typeof sample.json !== 'function') return null;
-  toast('Asking Claude which category this is…');
-  try {
-    const r = await sample.json(`Classify one household bill paid by a couple living in Ireland into exactly one of these categories: ${BILL_CAT_NAMES.join(', ')}.\nBill name: ${name}\n${note ? `Note: ${note}\n` : ''}Reply with only JSON, for example {"category":"Utilities"}.`, {modelTier: 'quick'});
-    const c = r && String(r.category || '');
-    return BILL_CAT_NAMES.includes(c) ? c : null;
-  } catch (e) { return null; }
-}
 async function billSave(){
   const b = S.f.bill || {};
   const out = {
@@ -6319,11 +6314,7 @@ async function billSave(){
   if (!needDb()) return;
   S.err = '';
   if (b.cat && b.cat !== 'auto' && BILL_CAT_NAMES.includes(b.cat)){ out.cat = b.cat; out.catBy = 'chosen'; }
-  else {
-    const kw = autoCat(out.name);
-    if (kw){ out.cat = kw; out.catBy = 'auto'; }
-    else { S.busy = true; render(); const ai = await askCat(out.name, out.note); S.busy = false; out.cat = ai || 'Other'; out.catBy = ai ? 'claude' : 'auto'; }
-  }
+  else { out.cat = autoCat(out.name) || 'Other'; out.catBy = 'auto'; }
   out.updatedAt = new Date().toISOString();
   try {
     if (b._id){
@@ -6518,8 +6509,7 @@ async function stepSave(wsI, id, quick){
 /* ---------- PDF ---------- */
 function loadScript(src){ return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('Could not load ' + src)); document.head.appendChild(s); }); }
 async function makePdf(){
-  const dl = await S.dlP;
-  if (!dl){ toast('Saving files isn’t available in this view.'); return; }
+  const dl = await appUse('downloads');
   const ws = S.reportWeek ? pd(S.reportWeek) : weekStartOf(today());
   S.busy = true; render();
   const lookWas = document.documentElement.dataset.look; document.documentElement.dataset.look = 'classic';   // Rory's PDF keeps its own look
@@ -6759,20 +6749,18 @@ document.addEventListener('click', async e => {
   }
 });
 
-/* ---------- boot ---------- */
-const useCap = n => (window.claude && typeof window.claude.use === 'function') ? window.claude.use(n).catch(() => null) : Promise.resolve(null);
+/* ---------- boot: the app's data layer (app/bridge.js) gives the page its database, who is signed in, files to save and notifications on this phone ---------- */
+const appUse = n => window.wbw ? window.wbw.use(n) : Promise.resolve(null);
 window.addEventListener('scroll', iosScroll, {passive: true});
 render();
 (async () => {
-  S.dlP = useCap('downloads');
-  S.sampleP = useCap('sample');
-  const db = await useCap('db');
+  const db = await appUse('db');
   if (!db){ S.noDb = true; render(); return; }
   S.db = db;
-  useCap('user').then(async u => { if (!u) return; try { const c = await u.can('data.write'); if (c === false){ S.canWrite = false; render(); } } catch (e) {} try { if (!S.canWrite && await u.can('answer.own') === true){ S.canAnswer = true; render(); } } catch (e) {} });   // Rory's own account can answer Thiago's questions, nothing else
-  useCap('notify').then(n => { if (n) ntfLoad(n); });   // only in our own app: notifications on this phone
+  appUse('user').then(async u => { S.canWrite = await u.can('data.write'); S.canAnswer = !S.canWrite && await u.can('answer.own'); render(); });   // Rory's own account only reads, and answers Thiago's questions
+  appUse('notify').then(ntfLoad);
   document.addEventListener('visibilitychange', () => { if (!document.hidden && S.ntf) S.ntf.api.state().then(st => { if (S.ntf && st !== S.ntf.state){ S.ntf.state = st; render(); } }).catch(() => {}); });   // back from the iPhone's Settings
-  const onErr = e => { console.warn(e); if (e && e.code === 'revoked'){ S.noDb = true; render(); } };
+  const onErr = e => console.warn(e);
   db.doc('config/settings').onSnapshot(s => { S.settings = s.exists ? {...s.data()} : {}; S.got.settings = true; sched(); }, onErr);
   db.doc('config/plan').onSnapshot(s => { S.plan = s.exists ? {...s.data()} : {}; S.got.plan = true; sched(); }, onErr);
   db.doc('config/facts').onSnapshot(s => { S.facts = s.exists ? {...s.data()} : {}; S.got.facts = true; sched(); }, onErr);

@@ -1,10 +1,10 @@
 // Week by Week app: the account page. Who is signed in, sign out, and (Thiago only) bring in a backup.
 // A backup is the .json from Settings → Setup → Download a backup. Bringing one in replaces everything
-// in the app in one go (all or nothing, in the database: doc_import); the page inside Claude isn't touched.
+// in the app in one go (all or nothing, in the database: doc_import).
 (async () => {
   const el = document.getElementById('app-acct');
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
-  const A = await window.claude.use('account'), me = A.me();
+  const A = await window.wbw.use('account'), me = A.me();
   let file = null, armed = false, busy = false, msg = '', bad = false;
 
   // backup → documents: config/<name>, weeks/<id>, <collection>/<id> (the id isn't kept inside the data)
@@ -30,7 +30,7 @@
     const btn = !file ? '' : busy ? `<button class="btn strong" disabled>Bringing it in…</button>`
       : `<button class="btn ${armed ? 'danger' : 'strong'}" data-a="go">${armed ? `Tap again: replace everything with these ${file.docs.length} items` : 'Replace everything with this backup'}</button>${armed ? '<button class="btn" data-a="cancel">Cancel</button>' : ''}`;
     return `<section class="panel app-acct"><header><h2>Bring in a backup</h2></header>
-      <p class="app-note">The .json from Settings → Setup → Download a backup. It replaces everything in this app with the backup. The page inside Claude isn’t touched.</p>
+      <p class="app-note">The .json from Settings → Setup → Download a backup. It replaces everything in this app with the backup.</p>
       <input type="file" accept=".json,application/json" data-a="file" aria-label="Choose the backup file">
       ${file ? `<div class="app-kv"><span>Backup saved</span><b>${esc(when(file.savedAt))}</b></div>${rows}` : ''}
       ${msg ? `<p class="app-msg${bad ? ' bad' : ''}" role="status">${esc(msg)}</p>` : ''}

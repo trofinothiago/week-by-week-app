@@ -66,7 +66,7 @@ with sync_playwright() as p:
     pg.fill('#gPass', 'test-password-1'); pg.click('.app-form button[type=submit]'); pg.wait_for_timeout(1200)
     check('Thiago signs in: the sign-in screen goes', gate(pg) == '', gate(pg))
     check('Thiago sees his iPhone-look page with our data', ev(pg, "() => S.canWrite && document.documentElement.dataset.look === 'ios' && S.bills.length === %d" % len(seed.get('bills', {}))))
-    check('Today draws clean', not any(s in ev(pg, "() => document.getElementById('view').innerText") for s in ['Something went wrong', 'NaN', 'Invalid Date', 'store isn’t available']))
+    check('Today draws clean', not any(s in ev(pg, "() => document.getElementById('view').innerText") for s in ['Something went wrong', 'NaN', 'Invalid Date', 'couldn’t reach its data']))
     check('no errors on the page', not errs, errs)
     ctx.close()
 
