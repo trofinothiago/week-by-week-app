@@ -34,7 +34,7 @@ def check(name, ok, info=''):
     results.append({'name': name, 'ok': bool(ok), 'info': str(info)[:400]}); print(('PASS ' if ok else 'FAIL ') + name + (f'  [{str(info)[:200]}]' if info != '' else ''), flush=True)
 
 TABS = [('today', None), ('week', None), ('pay', None)] + [('money', x) for x in ['balance', 'bills', 'energy', 'debts', 'spending', 'transfers']] + \
-       [('plan', x) for x in ['plan', 'advisor', 'budget', 'compare', 'ready', 'million']] + [('settings', x) for x in ['setup', 'rules', 'health', 'history']]
+       [('plan', x) for x in ['plan', 'advisor', 'budget', 'compare', 'ready']] + [('settings', x) for x in ['setup', 'rules', 'health', 'history']]
 # phone fit: nothing past the edge, squeezed into a narrow column, or drawn on top of other text
 PROBE = r"""() => {
   const W = document.documentElement.clientWidth, out = [];
@@ -226,6 +226,13 @@ with sync_playwright() as p:
       S.sub.money = 'balance'; render(); r.debt = document.getElementById('view').innerText.includes('Debt at the end of each month') || sortedChecks().length < 2;
       S.tab = 'week'; render(); return r; }""")
     check('Trends (cleaner): gone from Plan; every money check (with Delete) folds into Week, debt by month into Balance, categories into Spending', all(tr5.values()), tr5)
+    for wpx in (375, 430):
+        pg.set_viewport_size({'width': wpx, 'height': 860})
+        l6 = ev("""() => { S.tab = 'plan'; S.sub.plan = 'plan'; render(); const bar = !document.querySelector('[data-act=sub][data-v=million]'), p = [...document.querySelectorAll('#view .panel')].find(x => /^Later/.test(x.querySelector('h2')?.innerText || '')), ds = p ? [...p.querySelectorAll(':scope > details')] : [];
+          const closed = ds.length === 3 && ds.every(d => !d.open); ds.forEach(d => d.open = true); const t = p ? p.innerText : ''; return {bar, closed, has: ['Pensions for both of us', 'The gates', 'Our first million'].every(x => t.includes(x))}; }""")
+        f6 = ev(PROBE)
+        check(f'Plan (cleaner, {wpx}px): €1M leaves the section bar; pensions, investing and the €1M road fold into "Later", and open fitting the phone', l6['bar'] and l6['closed'] and l6['has'] and not f6, {**l6, 'fit': f6[:6]})
+    pg.set_viewport_size({'width': 390, 'height': 860}); ev("() => { S.tab = 'week'; render(); }")
     check('System (cleaner): the self-check stays; Claude’s check is one line with the detail folded; only ideas waiting show, keeping their number; What’s new folded', sy['one'] and sy['three'] and not sy['built'] and sy['rowHidden'] and sy['newsFolded'] and sy['selfCheck'] and sy['noIdeas'], sy)
     ev("() => render()")
     ev("() => { S.canWrite = false; render(); }"); rv = view()
