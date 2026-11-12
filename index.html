@@ -1940,6 +1940,9 @@ function dueMoves(from, days){
   }
   return out.sort((x, y) => x.sendBy - y.sendBy);
 }
+function foldQuiet(busy, open, line, html){   // a card with nothing running or due folds to one line; tapping it opens the same card in place
+  return busy ? html : `<section class="panel"><details${open ? ' open' : ''}><summary>${line}</summary><div class="nest">${html}</div></details></section>`;
+}
 const moveDone = m => !!(((S.weeks[m.w] || {}).transfers || {})[m.id]) || (m.abroad && !!(histAt(m.b, m.due) || S.wise.some(w => pd(w.date) && pd(w.date) >= addDays(m.sendBy, -10) && pd(w.date) <= m.due && String(w.purpose || '').toLowerCase().includes(String(m.b.name || '').toLowerCase()))));
 const wiseKey = x => String(x || '').toLowerCase().split(/\s+/)[0];
 function wiseBill(w){ const k = wiseKey(w.purpose); return k ? S.bills.find(b => b.account === 'nubank' && b.active !== false && (wiseKey(b.name) === k || (b.history || []).some(h => h.wiseId === w.id))) || null : null; }
@@ -1969,14 +1972,15 @@ function vWise(){
   const form = S.canWrite ? `<div class="formbox"><h3>Log a transfer to Nubank</h3><p class="mut" style="font-size:.9rem">Copy the numbers from the Wise receipt.</p>
     <div class="form">${field('wise', 'date', 'Date', {type:'date'})}${field('wise', 'eur', 'Euros sent (€)', {money:true, ph:'161.00', hint:'Fee included'})}${field('wise', 'fee', 'Wise fee (€)', {money:true, ph:'1.20'})}${field('wise', 'brl', 'Reais received (R$)', {money:true, ph:'950.00'})}${field('wise', 'purpose', 'What for', {ph:'Psychologist'})}</div>
     <div class="actions"><button class="btn strong" data-act="wiseSave">Log transfer</button></div></div>` : '';
-  return `<section class="panel"><header><h2>Transfers to Brazil</h2><span class="mut" style="font-size:.85rem">Revolut → Wise → Nubank</span></header>
+  const due = dueMoves(addDays(today(), -14), 21).some(m => m.abroad && !moveDone(m)), unl = wiseUnlinked();
+  return foldQuiet(due || warns.length > 0 || unl.length > 0, !!(S.f.wise || {}).eur || S.errAt === 'wise', `Transfers to Brazil <span class="mut">· ${list.length ? `${list.length} logged` : 'none yet'} ›</span>`, `<section class="panel"><header><h2>Transfers to Brazil</h2><span class="mut" style="font-size:.85rem">Revolut → Wise → Nubank</span></header>
     ${warns.map(w => `<div class="banner">${esc(w)}</div>`).join('')}
-    ${wiseUnlinked().map(w => `<div class="banner"><b>${esc(w.purpose || 'This transfer')} isn’t a bill yet</b>, so nothing is being saved for the next transfer. Add it as a bill: the Vault then saves for it every week, Pay shows the next transfer 3 days before it’s due, and this transfer (${dshort(pd(w.date))}, ${money(w.eur)}) goes into its history.${S.canWrite ? `<div class="actions"><button class="btn strong" data-act="wiseToBill" data-id="${esc(w.id)}">Add it as a bill</button></div>` : ''}</div>`).join('')}
+    ${unl.map(w => `<div class="banner"><b>${esc(w.purpose || 'This transfer')} isn’t a bill yet</b>, so nothing is being saved for the next transfer. Add it as a bill: the Vault then saves for it every week, Pay shows the next transfer 3 days before it’s due, and this transfer (${dshort(pd(w.date))}, ${money(w.eur)}) goes into its history.${S.canWrite ? `<div class="actions"><button class="btn strong" data-act="wiseToBill" data-id="${esc(w.id)}">Add it as a bill</button></div>` : ''}</div>`).join('')}
     ${form}${S.err && S.errAt === 'wise' ? `<p class="err">${esc(S.err)}</p>` : ''}
     ${list.length ? `<div class="tablewrap"><table><thead><tr><th>Date</th><th>What for</th><th class="r">Sent</th><th class="r">Wise fee</th><th class="r">Received</th><th class="r">Rate</th><th></th></tr></thead><tbody>
       ${list.map(w => { const net = num(w.eur) - num(w.fee); return `<tr><td class="num">${dshort(pd(w.date))}</td><td>${esc(w.purpose || '')}</td><td class="r num">${money(w.eur)}</td><td class="r num">${w.fee ? money(w.fee) : '—'}</td><td class="r num">${w.brl ? reais(w.brl) : '—'}</td><td class="r num">${w.brl && net > 0 ? `R$ ${(num(w.brl) / net).toFixed(3)}` : '—'}</td><td>${S.canWrite ? `<button class="btn small danger" data-act="wiseDel" data-id="${esc(w.id)}">Delete</button>` : ''}</td></tr>`; }).join('')}
       </tbody></table></div><p class="mut" style="font-size:.85rem">Rate is reais received for each euro after the Wise fee. Fees so far: ${money(list.reduce((a, w) => a + num(w.fee), 0))}.</p>` : '<p class="mut">No transfers logged yet.</p>'}
-  </section>`;
+  </section>`);
 }
 /* ---------- moving money between our accounts, by hand ---------- */
 const MV_FROM = ['joint', 'bills', 'vaults', 'ef', 'aib', 'cash', 'thiago', 'rory', 'outside'];
@@ -2292,10 +2296,10 @@ function vKlarna(){
     ${tot > 0 ? `<p class="tip">${n} instalments of about <b>${money(tot / n)}</b>${pd(f.first || f.date) ? `, from ${dlong(pd(f.first || f.date))}` : ''}.</p>` : ''}
     ${S.err && S.tab === 'money' ? `<p class="err">${esc(S.err)}</p>` : ''}
     <div class="actions"><button class="btn strong" data-act="klSave">Save Klarna plan</button></div></div>` : '';
-  return `<section class="panel"><header><h2>Klarna plans</h2>${left ? `<span class="mono">${money(left)} still to pay</span>` : ''}</header>
+  return foldQuiet(active.length > 0, !!(f.what || f.total), `＋ Klarna <span class="mut">· no plans running</span>`, `<section class="panel"><header><h2>Klarna plans</h2>${left ? `<span class="mono">${money(left)} still to pay</span>` : ''}</header>
     ${form}
     ${active.length ? `<div class="stack">${active.map(p => klarnaPlanHtml(p, {del: true, week: weekStartOf(today())})).join('')}</div>` : '<p class="mut">No Klarna plans running.</p>'}
-    ${finished.length ? `<details><summary>Finished plans (${finished.length})</summary><div class="stack" style="margin-top:10px">${finished.map(p => klarnaPlanHtml(p, {del: true})).join('')}</div></details>` : ''}</section>`;
+    ${finished.length ? `<details><summary>Finished plans (${finished.length})</summary><div class="stack" style="margin-top:10px">${finished.map(p => klarnaPlanHtml(p, {del: true})).join('')}</div></details>` : ''}</section>`);
 }
 async function klSave(){
   const f = S.f.kl, total = Math.round(num(f.total) * 100) / 100, n = Math.round(num(f.n) || 3);
@@ -5772,12 +5776,12 @@ function vBalance(){
       <p class="mut" style="font-size:.85rem">The solid line is from our money checks. The faint line follows the plan: debts paid down, then the emergency fund growing. It assumes the free money each week gets spent.</p>` : '<p class="mut">Two money checks draw the line.</p>'}
     ${(() => { if (!flow().configured) return ''; const ms = planMilestones(planState()).slice(0, 5); return ms.length ? `<div class="ledger">${ms.map(m => `<div class="lrow"><span class="d">${esc(fMYL.format(m.d))}</span><span class="n">${esc(m.t)}</span><span class="a"></span></div>`).join('')}</div>` : ''; })()}</section>`;
   const f = S.f.as || {};
-  const longForm = `<section class="panel"><header><h2>Long-term things</h2><span class="mut" style="font-size:.85rem">Optional. Update them a few times a year.</span></header>
+  const longForm = foldQuiet(S.assets.length > 0, !!(f.name || f.value) || S.errAt === 'as', `＋ Long-term things <span class="mut">· the home, pensions, money abroad</span>`, `<section class="panel"><header><h2>Long-term things</h2><span class="mut" style="font-size:.85rem">Optional. Update them a few times a year.</span></header>
     <p class="mut">The home and the mortgage, Rory’s pension, money in Nubank or your personal accounts. They change the full picture but not the weekly plan.</p>
     ${S.assets.length ? `<div class="ledger">${S.assets.slice().sort((a, b) => (a.side > b.side) - (a.side < b.side) || num(b.value) - num(a.value)).map(a => `<div class="lrow"><span class="d">${a.side === 'own' ? 'Own' : 'Owe'}</span><span class="n">${esc(a.name)} <small>${esc(ASSET_KIND[a.kind] || 'Other')} · ${dlong(pd(a.date))}</small></span><span class="a">${money(a.value)} ${S.canWrite ? `<button class="btn small danger" data-act="asDel" data-id="${esc(a.id)}">Delete</button>` : ''}</span></div>`).join('')}</div>` : ''}
     ${S.canWrite ? `<div class="formbox"><h3>Add or update one</h3><div class="form">${field('as', 'name', 'What', {ph: 'Rory’s pension'})}${field('as', 'kind', 'Type', {select: Object.entries(ASSET_KIND)})}${field('as', 'value', 'Value or balance (€)', {money: true, ph: '8400'})}${field('as', 'date', 'As of', {type: 'date'})}</div>
       <div class="fld"><span class="label">Is it something we own or owe?</span>${seg('as', 'side', [['own', 'We own it'], ['owe', 'We owe it']])}</div>
-      ${S.err && S.errAt === 'as' ? `<p class="err">${esc(S.err)}</p>` : ''}<div class="actions"><button class="btn strong" data-act="asSave">Save</button></div><p class="mut" style="font-size:.85rem">Same name again updates it. The car, the TV and other things we use aren’t counted: they lose value and can’t pay a bill.</p></div>` : ''}</section>`;
+      ${S.err && S.errAt === 'as' ? `<p class="err">${esc(S.err)}</p>` : ''}<div class="actions"><button class="btn strong" data-act="asSave">Save</button></div><p class="mut" style="font-size:.85rem">Same name again updates it. The car, the TV and other things we use aren’t counted: they lose value and can’t pay a bill.</p></div>` : ''}</section>`);
   return `<div class="stack">${head}${month}${past}${longForm}</div>`;
 }
 async function asSave(){

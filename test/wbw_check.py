@@ -238,6 +238,18 @@ with sync_playwright() as p:
         r7[where] = ev(f"""() => {{ S.tab = 'money'; S.sub.money = '{sub}'; S.todayOpen = ''; render(); const v = document.getElementById('view'), noForm = !v.querySelector('#f_spend_what, #f_add_amount'), b = v.querySelector('[data-act=todayOpen][data-v={v}]');
           if (!b) return {{noForm, btn: false}}; b.click(); const sh = document.querySelector('.ios-sheet'); const r = {{noForm, btn: true, tab: S.tab, sheet: !!sh && !!sh.querySelector('{'#f_spend_what' if v == 'log' else '#f_add_amount'}')}}; S.todayOpen = ''; S.tab = 'week'; render(); return r; }}""")
     check('Repeated forms (cleaner): Spending and Transfers have no form of their own; their button opens the one Today sheet', all(x['noForm'] and x['btn'] and x['tab'] == 'today' and x['sheet'] for x in r7.values()), r7)
+    q8 = ev("""() => { const line = (sub, re) => { S.tab = 'money'; S.sub.money = sub; render(); const d = [...document.querySelectorAll('#view .panel > details')].find(x => re.test(x.querySelector('summary').innerText)); return d ? (d.open ? 'open' : 'folded') : (re.test(document.getElementById('view').innerText) ? 'card' : 'missing'); };
+        const r = {};
+        const kl = S.klarna, as = S.assets, bl = S.bills;
+        S.klarna = []; S.assets = []; r.klNone = line('debts', /Klarna/); r.asNone = line('balance', /Long-term things/);
+        S.klarna = [{id: 'kitkl', what: 'Kit phone', total: 300, n: 3, date: iso(today()), first: iso(today()), who: 'thiago'}]; r.klBusy = line('debts', /Klarna plans/);
+        S.assets = [{id: 'kitas', name: 'Kit pension', kind: 'pension', value: 1000, date: iso(today()), side: 'own'}]; r.asBusy = line('balance', /Long-term things/);
+        S.klarna = kl; S.assets = as;
+        const quiet = !dueMoves(addDays(today(), -14), 21).some(m => m.abroad && !moveDone(m)) && !wiseWarnings().length && !wiseUnlinked().length;
+        r.brQuiet = quiet ? line('transfers', /Transfers to Brazil/) : 'folded';
+        const d5 = addDays(today(), 5); S.bills = bl.concat([{id: 'kitnb', name: 'Kit Brazil', account: 'nubank', amount: 100, freq: 'monthly', dueDay: d5.getDate(), active: true, cat: 'Health'}]); r.brDue = line('transfers', /Transfers to Brazil/);
+        S.bills = bl; S.tab = 'week'; render(); return r; }""")
+    check('Quiet cards (cleaner): Klarna, Long-term things and Brazil fold to one line when nothing runs or is due, and show in full when something does', q8 == {'klNone': 'folded', 'asNone': 'folded', 'klBusy': 'card', 'asBusy': 'card', 'brQuiet': 'folded', 'brDue': 'card'}, q8)
     check('System (cleaner): the self-check stays; Claude’s check is one line with the detail folded; only ideas waiting show, keeping their number; What’s new folded', sy['one'] and sy['three'] and not sy['built'] and sy['rowHidden'] and sy['newsFolded'] and sy['selfCheck'] and sy['noIdeas'], sy)
     ev("() => render()")
     ev("() => { S.canWrite = false; render(); }"); rv = view()
