@@ -71,6 +71,8 @@
         const list = Array.isArray(body) ? body : [body], up = /merge-duplicates/.test(h.get('prefer') || ''), out = [];
         for (const d of list){
           if (!/^[a-z][a-z0-9_]{0,39}$/.test(d.coll) || !d.id || d.id.includes('/')) return res(400, {code: '23514', message: 'check constraint'});
+          if (d.coll === 'years' && store.years && store.years[d.id]) return res(403, {code: '42501', message: 'a closed year report can never be changed'});   // supabase/005_closed_years.sql
+          if (d.coll === 'years' && (!/^[0-9]{4}$/.test(d.id) || String((d.data.data || {}).y) !== d.id || +d.id >= new Date().getFullYear())) return res(400, {code: '23514', message: 'a year report can only be closed once the year is over'});
           if (!up && store[d.coll] && store[d.coll][d.id]) return res(409, {code: '23505', message: 'duplicate key'});
           (store[d.coll] ||= {})[d.id] = {data: JSON.parse(JSON.stringify(d.data)), at: now()};
           window.__writes.push(up ? ['set', d.coll + '/' + d.id] : ['add', d.coll, d.id]);
@@ -81,6 +83,7 @@
       if (m === 'DELETE'){
         const f = eqs(q);
         if (role !== 'editor' || !store[f.coll] || !store[f.coll][f.id]) return res(200, []);
+        if (f.coll === 'years') return res(403, {code: '42501', message: 'a closed year report can never be changed'});
         delete store[f.coll][f.id]; window.__writes.push(['delete', f.coll + '/' + f.id]);
         return res(200, [{id: f.id}]);
       }
@@ -115,6 +118,7 @@
       if (role !== 'editor') return res(403, {code: '42501', message: 'read only'});
       const d = (store[body.p_coll] || {})[body.p_id];
       if (!d) return res(400, {code: 'P0002', message: `no doc ${body.p_coll}/${body.p_id}`});
+      if (body.p_coll === 'years') return res(403, {code: '42501', message: 'a closed year report can never be changed'});
       Object.assign(d.data, body.p_patch); d.at = now(); window.__writes.push(['update', body.p_coll + '/' + body.p_id]);
       return res(200, {data: d.data, at: d.at});
     }
@@ -123,8 +127,8 @@
       const list = body.p_docs;
       if (!Array.isArray(list) || !list.length) return res(400, {code: '22023', message: 'empty import'});
       if (list.some(d => !/^[a-z][a-z0-9_]{0,39}$/.test(d.coll) || !d.id || String(d.id).includes('/'))) return res(400, {code: '23514', message: 'check constraint'});
-      for (const k of Object.keys(store)) delete store[k];
-      for (const d of list) (store[d.coll] ||= {})[d.id] = {data: d.data, at: d.coll === 'answers' && d.data.at ? d.data.at : now()};
+      for (const k of Object.keys(store)) if (k !== 'years') delete store[k];   // a closed year is never touched: the import only adds the ones missing
+      for (const d of list) if (!(d.coll === 'years' && (store.years || {})[d.id])) (store[d.coll] ||= {})[d.id] = {data: d.data, at: d.coll === 'answers' && d.data.at ? d.data.at : now()};
       window.__writes.push(['import', list.length]);
       return res(200, list.length);
     }

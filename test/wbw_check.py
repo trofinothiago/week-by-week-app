@@ -33,7 +33,7 @@ results, notes = [], {}
 def check(name, ok, info=''):
     results.append({'name': name, 'ok': bool(ok), 'info': str(info)[:400]}); print(('PASS ' if ok else 'FAIL ') + name + (f'  [{str(info)[:200]}]' if info != '' else ''), flush=True)
 
-TABS = [('today', None), ('week', None), ('pay', None)] + [('money', x) for x in ['balance', 'bills', 'energy', 'debts', 'spending', 'transfers', 'tax']] + \
+TABS = [('today', None), ('week', None), ('pay', None)] + [('money', x) for x in ['balance', 'bills', 'energy', 'debts', 'spending', 'transfers', 'year']] + \
        [('plan', x) for x in ['plan', 'advisor', 'budget', 'compare', 'ready']] + [('settings', x) for x in ['setup', 'rules', 'health', 'history']]
 # phone fit: nothing past the edge, squeezed into a narrow column, or drawn on top of other text
 PROBE = r"""() => {
@@ -1106,7 +1106,7 @@ with sync_playwright() as p:
     # ---- Money → Tax: the yearly summary for Ireland (the kit states the rules itself) ----
     def f_tax():
         load(NOW); y = NOW.year
-        ev("() => { S.tab = 'money'; S.sub.money = 'tax'; render(); }"); v = view()
+        ev("() => { S.tab = 'money'; S.sub.money = 'year'; S.f.year.view = 'tax'; render(); }"); v = view()
         check('Tax: Money → Tax draws the year’s four numbers first, what’s next, says plainly it is not tax advice, and keeps the detail one tap away', f'{y}\nfor reference only' in v and 'Not tax advice' in v and 'What’s next' in v and ev("() => document.querySelectorAll('#view .ios-tile').length") == 4 and ev("() => document.querySelectorAll('#view .ios-list > details:not([open])').length") >= 5, v[:400])
         n0 = ev("() => S.changelog.length")
         I = ev(f"""() => {{ const out = {{thiago: 0, rory: 0}};   // every pay ticked whose payday is in the year: what reached the Joint (the real amount, else the plan) plus what was kept
@@ -1144,10 +1144,83 @@ with sync_playwright() as p:
         for wd in (375, 430):
             for dark in (False, True):
                 pg.set_viewport_size({'width': wd, 'height': 900}); pg.emulate_media(color_scheme='dark' if dark else 'light')
-                ev("() => { S.tab = 'money'; S.sub.money = 'tax'; render(); document.querySelectorAll('#view details').forEach(d => d.open = true); }"); w(200)
+                ev("() => { S.tab = 'money'; S.sub.money = 'year'; S.f.year.view = 'tax'; render(); document.querySelectorAll('#view details').forEach(d => d.open = true); }"); w(200)
                 f = ev(PROBE); check(f'Tax: fits the phone with every fold open ({wd} px, {"dark" if dark else "light"})', not f, f[:6])
         pg.set_viewport_size({'width': 390, 'height': 900}); pg.emulate_media(color_scheme='light')
     step('tax', f_tax)
+
+    # ---- Money → Year: the whole year counted, closed in January (the kit states the rules itself) ----
+    def f_year():
+        load(NOW); y = NOW.year
+        ev("() => { S.tab = 'money'; S.sub.money = 'year'; S.f.year.view = 'year'; render(); }"); v = view()
+        check('Year: Money → Year shows the year first (four numbers, in the black or red), then month by month, where it went, our rules and decisions', all(x in v for x in [str(y), 'Money in', 'Money out', 'Card owes', 'Emergency fund', 'Month by month', 'Where it went', 'Our rules', 'Decisions']) and ev("() => document.querySelectorAll('#view .ios-tile').length") == 4, v[:300])
+        Y = ev(f"""() => {{ const Y = yearData({y}), sp = S.spending.filter(x => String(x.date || '').startsWith('{y}')), int = S.cardlog.filter(e => e.type === 'interest' && String(e.date || '').startsWith('{y}')).reduce((v, e) => v + num(e.amount), 0);
+            const ck = sortedChecks().filter(c => c.date.startsWith('{y}')), first = ck[0], last = ck[ck.length - 1];
+            return {{gap: Y.in - Y.bills - Y.spend - Y.out - Y.net, cats: Object.values(Y.cats).reduce((v, x) => v + x, 0), want: sp.reduce((v, x) => v + num(x.amount), 0), int: Y.interest, wantInt: int,
+              start: Y.start && first ? Y.start.card === Math.round(num(first.card) * 100) / 100 : !first, end: Y.end && last ? Y.end.card === Math.round(num(last.card) * 100) / 100 : !last, slips: Y.rules.slips, wantSlips: sp.filter(isSlip).length}}; }}""")
+        check('Year: money in less money out is the result; the purchases are every purchase of the year; card interest is what the statements charged; the card and fund come from the first and last money check of the year', abs(Y['gap']) < .05 and abs(Y['cats'] - Y['want']) < .05 and abs(Y['int'] - Y['wantInt']) < .01 and Y['start'] and Y['end'] and Y['slips'] == Y['wantSlips'], Y)
+        # January: nothing closes before the 15th; from the 15th the To do opens the year, two taps close it for good, Rory is told
+        load(datetime.datetime(y + 1, 1, 4, 9, 0))
+        E = ev(f"() => {{ S.tab = 'money'; S.sub.money = 'year'; S.f.year = {{y: '{y}', view: 'year'}}; render(); return {{todo: todoList().some(x => x.to === 'year'), btn: !!document.querySelector('#view [data-act=yearClose]'), view: document.getElementById('view').innerText}}; }}")
+        check('Year: before 15 January the year can’t be closed yet (no To do, no button), and the screen says when', not E['todo'] and not E['btn'] and 'closes from 15 January' in E['view'], {k: E[k] for k in ('todo', 'btn')})
+        load(datetime.datetime(y + 1, 1, 15, 9, 0))
+        T = ev("() => todoList().find(x => x.to === 'year') || null")
+        check('Year: from 15 January the To do list asks to check last year’s report and close it, and opens it', T is not None and str(y) in T['txt'], T)
+        ev("() => { S.tab = 'money'; S.sub.money = 'year'; S.f.year = {y: '', view: 'year'}; render(); }")
+        first = ev("() => document.querySelector('#view [data-act=yearClose]')?.dataset.v")
+        check('Year: in January the year screen opens on the year to close, with the close button under the whole year', first == str(y), first)
+        act('yearClose', v=str(y)); w(300)
+        one = ev(f"() => ({{doc: !!yearDoc({y}), asks: document.querySelector('#view [data-act=yearClose]')?.textContent}})")
+        act('yearClose', v=str(y)); w(600)
+        R = ev(f"""() => {{ const d = yearDoc({y}), h = S.changelog.filter(c => String(c.text || '').startsWith('Closed the {y} year report')); return {{doc: !!d && d.data && d.data.y === {y}, tell: h.map(c => c.tell), todo: todoList().some(x => x.to === 'year'), btns: [...document.querySelectorAll('#view button')].map(b => b.dataset.act).filter(a => /^year/.test(a || ''))}}; }}""")
+        check('Year: closing takes two taps (the first says it can never be changed)', not one['doc'] and 'never be changed' in (one['asks'] or ''), one)
+        check('Year: closed, it is saved once, one History line tells Rory (report), the To do goes, and no button can change it', R['doc'] and R['tell'] == ['report'] and not R['todo'] and R['btns'] == [], R)
+        L = ev(f"""async () => {{ const was = JSON.stringify(yearDoc({y}).data), out = {{}};
+            try {{ await S.db.doc('years/{y}').set({{y: {y}, data: {{...yearDoc({y}).data, net: 1}}}}); out.set = 'written'; }} catch (e) {{ out.set = 'refused'; }}
+            try {{ await S.db.doc('years/{y}').delete(); out.del = 'deleted'; }} catch (e) {{ out.del = 'refused'; }}
+            await new Promise(r => setTimeout(r, 400)); out.same = !!yearDoc({y}) && JSON.stringify(yearDoc({y}).data) === was; return out; }}""")
+        check('Year: the database refuses to change or delete a closed year (supabase/005_closed_years.sql)', L == {'set': 'refused', 'del': 'refused', 'same': True}, L)
+        ev(f"() => {{ S.spending = S.spending.concat([{{id: 'kity', date: '{y}-12-20', what: 'Kit late receipt', amount: 33.33, cat: 'Other', paidFrom: 'joint', who: 'both', kind: 'need', told: 'before'}}]); render(); }}")
+        M = ev(f"() => {{ const A = yearShown({y}); return {{moved: A.moved, shownSpend: A.Y.spend, liveSpend: A.live.spend, note: document.getElementById('view').innerText.includes('Logged after {y} closed')}}; }}")
+        check('Year: something logged after it closed never changes the closed report; the screen just says it was logged after', M['moved'] and M['note'] and abs(M['liveSpend'] - M['shownSpend'] - 33.33) < .01, M)
+        ev(f"() => {{ S.canWrite = false; S.f.rory = {{tab: 'year', y: '{y}'}}; render(); }}"); rv = view()
+        check('Year: Rory has two tabs (This week, Our year); his year tab shows the closed year in his own design', 'This week' in rv and 'Our year' in rv and f'{y}' in rv and 'so far' not in rv.split('Money in')[0] and ev("() => !!document.querySelector('#view .board .bkpis')"), rv[:300])
+        ev("() => { S.f.rory = {tab: 'week', y: ''}; render(); }")
+        check('Year: Rory’s week tab is his weekly report as before, with a Download PDF button', ev("() => !!document.querySelector('#view .board') && !!document.querySelector('#view [data-act=pdf]')"))
+        ev("() => { S.canWrite = true; render(); }")
+        Q = ev("""() => { S.settings = {...S.settings, startedOn: '2018-01-10'}; const out = {};
+            for (const [nm, js] of [['thiago', () => { S.canWrite = true; S.tab = 'money'; S.sub.money = 'year'; S.f.year = {y: '', view: 'year'}; }], ['rory', () => { S.canWrite = false; S.f.rory = {tab: 'year', y: ''}; }]]) { js(); render();
+              const form = nm === 'thiago' ? 'year' : 'rory', top = [...document.querySelectorAll(`#view [data-act=seg][data-form=${form}][data-key=y]`)].filter(b => !b.closest('details')).map(b => b.dataset.val), older = [...document.querySelectorAll(`#view details [data-act=seg][data-form=${form}][data-key=y]`)].map(b => b.dataset.val);
+              S.f[form].y = older[older.length - 1]; render(); out[nm] = {top, older, shows: document.getElementById('view').innerText.includes(older[older.length - 1])}; }
+            S.canWrite = true; return out; }""")
+        yn = ev("() => today().getFullYear()"); want = [str(yn - i) for i in range(6)]
+        check('Year: the last 6 years are tabs, older years stay one tap away and open (Thiago and Rory)', all(Q[k]['top'] == want and Q[k]['older'] == [str(x) for x in range(yn - 6, 2017, -1)] and Q[k]['shows'] for k in ('thiago', 'rory')), Q)
+        load(datetime.datetime(y + 1, 1, 15, 9, 0))
+        ev(f"() => {{ S.years = [{{id: '{y}', data: 'broken'}}]; S._hc = null; }}")
+        check('Year: the self-check flags a closed year report that can’t be read', ev("() => selfCheck().items.some(x => x.area === 'Year report')"))
+        ev("() => { S.years = []; S._hc = null; render(); }")
+        if A.lib:
+            for who, js, name in [('Thiago', f"S.canWrite = true; S.tab = 'money'; S.sub.money = 'year'; S.f.year = {{y: '{y}', view: 'year'}};", f'Week by Week {y}.pdf'),
+                                  ('Rory, his year tab', f"S.canWrite = false; S.f.rory = {{tab: 'year', y: '{y}'}};", f'Week by Week {y}.pdf'),
+                                  ('Rory, his week tab', "S.canWrite = false; S.reportWeek = null; S.f.rory = {tab: 'week', y: ''};", 'Week by Week ')]:
+                ev(f"() => {{ window.__saved = []; {js} render(); }}")
+                pg.click('#view button[data-act="pdf"]', timeout=5000)
+                for _ in range(40):
+                    if ev("() => window.__saved.length"): break
+                    w(500)
+                check(f'Year: the PDF downloads for {who}', ev(f"() => window.__saved.some(x => x.name.startsWith({json.dumps(name)}) && /\\.pdf$/.test(x.name))"), ev("() => window.__saved.map(x => x.name)"))
+            ev("() => { S.canWrite = true; render(); }")
+        load(NOW)
+        for wd in (375, 430):
+            for dark in (False, True):
+                pg.set_viewport_size({'width': wd, 'height': 900}); pg.emulate_media(color_scheme='dark' if dark else 'light')
+                ev("() => { S.tab = 'money'; S.sub.money = 'year'; S.f.year.view = 'year'; render(); document.querySelectorAll('#view details').forEach(d => d.open = true); }"); w(200)
+                f1 = ev(PROBE)
+                ev(f"() => {{ S.canWrite = false; S.f.rory = {{tab: 'year', y: '{y}'}}; render(); }}"); w(200); f2 = ev(PROBE)
+                ev("() => { S.canWrite = true; S.f.rory = {tab: 'week', y: ''}; render(); }")
+                check(f'Year: fits the phone, Thiago’s screen with everything open and Rory’s view ({wd} px, {"dark" if dark else "light"})', not f1 and not f2, (f1 + f2)[:6])
+        pg.set_viewport_size({'width': 390, 'height': 900}); pg.emulate_media(color_scheme='light')
+    step('year', f_year)
     step('ahead', f_ahead)
     br.close()
 

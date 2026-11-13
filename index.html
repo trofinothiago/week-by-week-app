@@ -619,6 +619,8 @@ details > summary{cursor:pointer;font-weight:700;font-family:var(--f-display);pa
 .ios-list .rowbody{padding:2px 16px 16px 50px;display:grid;gap:10px}.ios-list .rowbody p{margin:0;line-height:1.45}.ios-list .rowbody .rules{padding-left:20px}
 .taxitem{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:baseline;font-size:.95rem}.taxitem small{display:block;color:var(--muted);font-size:.82rem;margin-top:2px}.taxitem b{font-weight:600;font-variant-numeric:tabular-nums}
 .tnote{padding:0 6px;margin:2px 0 0}
+.ios-list.pad{padding:12px 14px}
+.ios-list .rowbody.full{padding:0 10px 12px}
 a.ios-row{text-decoration:none}
 .ios-row.done .txt{color:var(--muted)} .ios-row.done .end{color:var(--ok)}
 .ios-day{width:38px;text-align:center;line-height:1.1}
@@ -999,12 +1001,12 @@ const occName = (b, d) => { if (!b || b.freq !== 'instal') return b ? b.name : '
 /* ---------- state ---------- */
 const S = {
   tab:'today', sub:{money:'balance', plan:'plan', settings:'setup'}, todayOpen:'', db:null, noDb:false, canWrite:true, canAnswer:false, ntf:null,
-  settings:{}, plan:{}, facts:{}, advice:{}, energy:{}, health:{}, assets:[], bills:[], cardlog:[], spending:[], wishlist:[], changelog:[], weeks:{}, wise:[], checks:[], klarna:[], loans:[], moves:[], compare:[], answers:[], prep:[], prepCfg:{},
+  settings:{}, plan:{}, facts:{}, advice:{}, energy:{}, health:{}, assets:[], bills:[], cardlog:[], spending:[], wishlist:[], changelog:[], weeks:{}, wise:[], checks:[], klarna:[], loans:[], moves:[], compare:[], answers:[], prep:[], years:[], prepCfg:{},
   got:{}, reportWeek:null, billOpen:false, err:'', busy:false,
   f:{
     bill:null, set:null, plan:null,
     bal:{date:'', amount:''}, pay:{date:'', amount:'', note:''}, sch:{date:'', amount:'', note:''},
-    tax:{y: String(new Date().getFullYear())}, spend:{date:'', what:'', amount:'', cat:'', paidFrom:'joint', who:'', kind:'need', told:'before', note:''}, as:{name:'', kind:'cash', value:'', date:'', side:'own'}, unk:{date:'', paidFrom:'joint'},
+    year:{y: '', view: 'year'}, rory:{tab: 'week', y: ''}, spend:{date:'', what:'', amount:'', cat:'', paidFrom:'joint', who:'', kind:'need', told:'before', note:''}, as:{name:'', kind:'cash', value:'', date:'', side:'own'}, unk:{date:'', paidFrom:'joint'},
     check:{what:'', price:'', paidFrom:'joint', who:'', need:'', told:''}, add:{date:'', amount:'', to:'joint', who:'', how:'', note:''},
     dec:{text:''}, what:{extra:''}, note:{}, wise:{date:'', eur:'', fee:'', brl:'', purpose:'Psychologist'}, chk:{date:'', joint:'', bills:'', vaults:'', ef:'', aib:'', card:'', note:''}, kl:{what:'', total:'', date:'', n:'3', every:'month', first:'', paidFrom:'card', who:''}, wi:{what:'', monthly:'', months:'', start:''}, wiRm:{}, mv:{date:'', from:'', to:'', amount:'', note:'', kind:'', bill:''}, en:{upTo:'', kwh:'', eur:''}, enb:{}, ln:{what:'', lender:'', financed:'', instalment:'', n:'', every:'month', start:'', first:'', paidFrom:'bills', lastAmount:'', who:'both', note:''}
   }
@@ -3036,7 +3038,11 @@ function reportFull(ws, D){   // the live view: the one-page board, then the det
 function vRory(){
   const cur = weekStartOf(today()), ws = S.reportWeek ? pd(S.reportWeek) : cur, isCur = iso(ws) === iso(cur);
   if (!flow().configured) return '<p class="mut">Nothing set up yet.</p>';
-  return `<div class="stack"><div class="weeknav mid"><button class="btn small" data-act="wkPrev" aria-label="Previous week">←</button><b>${weekLabel(ws)}</b><button class="btn small" data-act="wkNext" aria-label="Next week"${isCur ? ' disabled' : ''}>→</button></div>${isCur ? roryAskCard() : ''}${reportFull(ws, reportData(ws))}${ntfRoryCard()}</div>`;
+  const tabs = `<div class="actions">${seg('rory', 'tab', [['week', 'This week'], ['year', 'Our year']])}</div>`, pdf = y => `<div class="actions"><button class="btn" data-act="pdf"${y ? ` data-v="${y}"` : ''}${S.busy ? ' disabled' : ''}>${S.busy ? 'Making the PDF…' : 'Download PDF'}</button></div>`;
+  if (S.f.rory.tab === 'year'){ const ys = taxYears(), y = ys.includes(Number(S.f.rory.y)) ? Number(S.f.rory.y) : ys[0];
+    const P = yearPick('rory', ys);
+    return `<div class="stack">${tabs}${P.tabs ? `<div class="actions">${P.tabs}</div>` : ''}${P.older}${yearBoard(yearShown(y).Y, false)}${pdf(y)}</div>`; }
+  return `<div class="stack">${tabs}<div class="weeknav mid"><button class="btn small" data-act="wkPrev" aria-label="Previous week">←</button><b>${weekLabel(ws)}</b><button class="btn small" data-act="wkNext" aria-label="Next week"${isCur ? ' disabled' : ''}>→</button></div>${isCur ? roryAskCard() : ''}${reportFull(ws, reportData(ws))}${pdf(0)}${ntfRoryCard()}</div>`;
 }
 function vHistory(){
   const list = S.changelog.slice().sort((a, b) => (b.at || '').localeCompare(a.at || ''));
@@ -5524,7 +5530,7 @@ function cardIntPanel(){
 }
 
 /* ---------- system health: the page checks itself every time it opens; Claude runs the full check every Monday ---------- */
-const APP_VERSION = '2026.11.13-3';
+const APP_VERSION = '2026.11.13-4';
 function selfCheck(){   // cheap checks on the data, run on every open: things that don't fit, and the weekly tasks that should have run
   const key = `${S._rt}|${iso(today())}`; if (S._hc && S._hc.k === key) return S._hc.v;
   const items = [], t = today(), add = (st2, area, txt) => items.push({st: st2, area, t: txt});
@@ -5591,6 +5597,7 @@ function selfCheck(){   // cheap checks on the data, run on every open: things t
     { const a = backupAge(); if (a == null || a > 35) add('idle', 'Backup', a == null ? 'No backup downloaded yet.' : `Last backup ${a} days ago.`); }
     cmpHealth(add);
     taxHealth(add);   // Tax summary: every rule from an official source
+    yearHealth(add);   // a closed year report that can't be read
     prepHealth(add);   // Ready: official updates only from allowed sources, kit items, cash at home   // Compare: comparisons pointing at bills or a switch that aren't there any more
   } catch (e) { console.error(e); add('bad', 'System', 'The self-check itself hit an error: ' + (e && e.message || e)); }
   const v = {items, at: new Date().toISOString(), st: items.some(x => x.st === 'bad') ? 'bad' : items.some(x => x.st === 'warn') ? 'warn' : 'ok'};
@@ -5639,7 +5646,7 @@ function vHealth(){
   </div>`;
 }
 /* ---------- backup: everything in the app, in one file ---------- */
-const DATA_COLLS = ['bills', 'cardlog', 'spending', 'wishlist', 'changelog', 'weeks', 'wise', 'checks', 'klarna', 'loans', 'assets', 'moves', 'compare', 'answers', 'prep'];   // every collection the page uses: loaded on open and saved in the backup. A new feature's collection goes here, and nowhere else
+const DATA_COLLS = ['bills', 'cardlog', 'spending', 'wishlist', 'changelog', 'weeks', 'wise', 'checks', 'klarna', 'loans', 'assets', 'moves', 'compare', 'answers', 'prep', 'years'];   // every collection the page uses: loaded on open and saved in the backup. A new feature's collection goes here, and nowhere else
 const BK_COLLS = DATA_COLLS.filter(k => k !== 'weeks');
 function backupData(){
   const strip = o => { const x = {...o}; return x; };
@@ -5947,8 +5954,8 @@ async function asSave(){
 
 /* ---------- navigation: 5 places ---------- */
 const NAV = [['today', 'Today'], ['week', 'Week'], ['pay', 'Pay'], ['money', 'Money'], ['plan', 'Plan'], ['settings', 'Settings']];
-const SUBS = {money: [['balance', 'Balance'], ['bills', 'Bills'], ['energy', 'Electricity'], ['debts', 'Debts'], ['spending', 'Spending'], ['transfers', 'Transfers'], ['tax', 'Tax']], plan: [['plan', 'Plan'], ['advisor', 'Advisor'], ['budget', 'Budget'], ['compare', 'Compare'], ['ready', 'Ready']], settings: [['setup', 'Setup'], ['rules', 'Rules'], ['health', 'System'], ['history', 'History']]};
-const ROUTE = {tax: ['money', 'tax'], compare: ['plan', 'compare'], ready: ['plan', 'ready'], prep: ['plan', 'ready'], advisor: ['plan', 'advisor'], wishlist: ['plan', 'advisor'], payments: ['pay'], payment: ['pay'], balance: ['money', 'balance'], overview: ['today'], shield: ['today'], report: ['week'], transfers: ['money', 'transfers'], wise: ['money', 'transfers'], budget: ['plan', 'budget'], bills: ['money', 'bills'], review: ['plan', 'budget'], energy: ['money', 'energy'], electricity: ['money', 'energy'], card: ['money', 'debts'], debts: ['money', 'debts'], spending: ['money', 'spending'], history: ['settings', 'history'], setup: ['settings', 'setup'], rules: ['settings', 'rules'], system: ['settings', 'health'], health: ['settings', 'health']};
+const SUBS = {money: [['balance', 'Balance'], ['bills', 'Bills'], ['energy', 'Electricity'], ['debts', 'Debts'], ['spending', 'Spending'], ['transfers', 'Transfers'], ['year', 'Year']], plan: [['plan', 'Plan'], ['advisor', 'Advisor'], ['budget', 'Budget'], ['compare', 'Compare'], ['ready', 'Ready']], settings: [['setup', 'Setup'], ['rules', 'Rules'], ['health', 'System'], ['history', 'History']]};
+const ROUTE = {year: ['money', 'year'], tax: ['money', 'year'], compare: ['plan', 'compare'], ready: ['plan', 'ready'], prep: ['plan', 'ready'], advisor: ['plan', 'advisor'], wishlist: ['plan', 'advisor'], payments: ['pay'], payment: ['pay'], balance: ['money', 'balance'], overview: ['today'], shield: ['today'], report: ['week'], transfers: ['money', 'transfers'], wise: ['money', 'transfers'], budget: ['plan', 'budget'], bills: ['money', 'bills'], review: ['plan', 'budget'], energy: ['money', 'energy'], electricity: ['money', 'energy'], card: ['money', 'debts'], debts: ['money', 'debts'], spending: ['money', 'spending'], history: ['settings', 'history'], setup: ['settings', 'setup'], rules: ['settings', 'rules'], system: ['settings', 'health'], health: ['settings', 'health']};
 function normTab(){ const r = ROUTE[S.tab]; if (r){ S.tab = r[0]; if (r[1]) S.sub[r[0]] = r[1]; } if (!NAV.some(n => n[0] === S.tab)) S.tab = 'today'; }
 function go(t){ if (t === 'plan'){ S.tab = 'plan'; S.sub.plan = 'plan'; } else { S.tab = t; normTab(); } S.err = ''; render(); window.scrollTo({top: 0}); }
 const subnav = k => `<div class="subnav" role="tablist" aria-label="Sections">${SUBS[k].map(([v, l]) => `<button type="button" role="tab" data-act="sub" data-k="${k}" data-v="${v}" aria-selected="${S.sub[k] === v}">${l}</button>`).join('')}</div>`;
@@ -6192,7 +6199,8 @@ function todoMonth({t, fl, cs}, add){   // the card's statement and payment, the
   { const m0 = monthResult(t), e = m0 && !m0.partial ? monthEnding(m0) : null; if (fl.configured && e != null && e < 0) add('bad', `This month is on track to end ${money(-e)} in the red.`, 'balance', 'See why'); }
   { const pn = payToDo(); if (pn.length){ const n = k => pn.filter(x => x.kind === k).length, parts = [n('step') ? `${n('step')} transfer${n('step') > 1 ? 's' : ''}` : '', n('move') ? `${n('move')} Vault move${n('move') > 1 ? 's' : ''}` : '', n('card') ? 'the card payment' : '', n('stmt') ? 'the card statement' : '', n('bill') ? `${n('bill')} bill${n('bill') > 1 ? 's' : ''}` : ''].filter(Boolean); add(pn.some(x => x.late && (x.kind === 'move' || (x.kind === 'bill' && !['bills', 'card'].includes(x.b.account)))) ? 'bad' : 'warn', `To do today in Pay: ${parts.join(', ')}.`, 'pay', 'Open Pay'); } }
 }
-function todoRecords({t}, out){   // the monthly backup, and a transfer to Brazil with no bill behind it
+function todoRecords({t}, out){   // the monthly backup, a transfer to Brazil with no bill behind it, and last year's report to close
+  { const y = yearToClose(); if (y) out.push({st: 'warn', txt: `${y} is over: check its year report and close it for good. Rory is told it’s ready.`, to: 'year'}); }
   if (S.canWrite && S.bills.length && pd(st().startedOn) && dayDiff(pd(st().startedOn), t) >= 7){ const a = backupAge(); if (a == null || a >= 31) out.push({st: 'idle', txt: a == null ? 'Download a backup of the system: one file with everything in it. Once a month is enough.' : `Monthly backup: the last one was ${a} days ago.`, act: 'backup', id: '', btn: 'Download'}); }
   for (const w of wiseUnlinked()) out.push({st: 'warn', txt: `${w.purpose || 'A transfer to Brazil'} (${dshort(pd(w.date))}, ${money(w.eur)}) isn’t a bill yet: nothing is being saved for the next transfer. Add it as a bill.`, act: 'wiseToBill', id: w.id, btn: 'Add it'});
 }
@@ -6410,13 +6418,93 @@ function taxRules(){
   return `<section class="ios-sec"><h2>Rules we use <small>checked ${dshort(pd(F.checked))}</small></h2><div class="ios-list">${taxRow('ok', `${R.length} rules`, 'Revenue and Citizens Information', '', `<ol class="rules">${R.map(r => `<li>${esc(r.t || '')}${taxSrc(r)}</li>`).join('')}</ol><p class="mut fs85">Claude re-checks them with the other rules every Sunday morning.</p>`)}</div>
     <p class="mut fs85 tnote">Not tax advice. Revenue’s figures always win; for personal advice, Citizens Information or a tax adviser.</p></section>`;
 }
-function vTax(){
-  const ys = taxYears(), T = taxYear(ys.includes(Number(S.f.tax.y)) ? Number(S.f.tax.y) : ys[0]);
-  return `<div class="stack">${ys.length > 1 ? `<div class="actions">${seg('tax', 'y', ys.map(y => [String(y), String(y)]))}</div>` : ''}${taxGlance(T)}${taxNext(T)}${taxHealthList(T)}${taxIncome(T)}${taxInterest(T)}${taxWhere(T)}${taxRules()}</div>`;
+/* ---------- Money → Year: the whole year counted, for both of us. Live during the year; from 15 January Thiago closes it, and a closed year can never be changed (the database refuses: supabase/005_closed_years.sql) ---------- */
+const r2all = o => JSON.parse(JSON.stringify(o, (k, v) => typeof v === 'number' ? Math.round(v * 100) / 100 : v));
+function yearData(y){   // everything the app counted for one calendar year, as plain numbers: what a closed year keeps
+  const Y = String(y), t = today(), s0 = pd(st().startedOn), a = s0 && s0.getFullYear() === y ? s0 : new Date(y, 0, 1), z = new Date(y, 11, 31) < t ? new Date(y, 11, 31) : t;
+  const months = []; for (let m = 0; m < 12; m++){ const r = monthResult(new Date(y, m, 1)); if (r) months.push({m: iso(r.a0).slice(0, 7), in: r.inSum, bills: -r.billSum, spend: -r.spendSum, out: -r.outSum, net: r.net, end: monthEnding(r), partial: r.partial, cur: r.isCur}); }
+  const sum = k => months.reduce((v, x) => v + x[k], 0), sp = S.spending.filter(x => String(x.date || '').startsWith(Y)), cats = {};
+  for (const x of sp){ const c = x.kind === 'unknown' ? 'Unexplained' : x.cat || 'Other'; cats[c] = (cats[c] || 0) + num(x.amount); }
+  const ck = sortedChecks().filter(c => c.date.startsWith(Y)), at = c => c ? {d: c.date, card: num(c.card), ef: num(c.ef), net: checkNet(c)} : null;
+  const dec = S.changelog.filter(c => String(c.date || '').startsWith(Y) && ['yes', 'no', 'na'].includes(c.rory)), T = taxYear(y);
+  return r2all({y, from: iso(a), to: iso(z), done: t > new Date(y, 11, 31), months, in: sum('in'), bills: sum('bills'), spend: sum('spend'), out: sum('out'), net: sum('net'), cats,
+    start: at(ck[0]), end: at(ck[ck.length - 1]), interest: S.cardlog.filter(e => e.type === 'interest' && String(e.date || '').startsWith(Y)).reduce((v, e) => v + num(e.amount), 0),
+    rules: {slips: sp.filter(isSlip).length, impulse: sp.filter(x => x.kind === 'impulse').reduce((v, x) => v + num(x.amount), 0), unexplained: cats.Unexplained || 0, pocket: sp.filter(x => x.paidFrom === 'bills').reduce((v, x) => v + num(x.amount), 0)},
+    decisions: {together: dec.filter(c => c.rory === 'yes').length, without: dec.filter(c => c.rory === 'no').length, other: dec.filter(c => c.rory === 'na').length},
+    tax: {thiago: T.inc.thiago.tot, rory: T.inc.rory.tot, health: T.tot, likely: T.likely, interest: T.net}});
+}
+const yearDoc = y => S.years.find(d => d.id === String(y)) || null;
+function yearShown(y){   // a closed year shows what was closed; with what's logged now beside it, when something changed after
+  const doc = yearDoc(y), live = yearData(y), D = doc && doc.data && typeof doc.data === 'object' ? doc.data : null;
+  const moved = D ? ['in', 'out', 'spend', 'bills', 'net'].some(k => Math.abs(num(D[k]) - num(live[k])) >= .01) || Math.abs(num((D.tax || {}).health) - num(live.tax.health)) >= .01 : false;
+  return {Y: D || live, live, doc, closed: !!D, moved};
+}
+const yearToClose = () => { const t = today(), y = t.getFullYear() - 1, s0 = pd(st().startedOn); return S.canWrite && s0 && s0.getFullYear() <= y && t >= new Date(y + 1, 0, 15) && !yearDoc(y) ? y : null; };   // from 15 January: December's receipts and the card statement are in
+const yearLine = Y => `money in ${money(Y.in)}, money out ${money(Y.bills + Y.spend + Y.out)}, ${Y.net >= 0 ? 'in the black by' : 'in the red by'} ${money(Math.abs(Y.net))}`;
+async function yearClose(y){   // two taps; the year is written once and can never be changed afterwards, Rory is told
+  if (!needDb() || yearToClose() !== y) return;
+  if (S.confirmYr !== y){ S.confirmYr = y; render(); toast('Tap again to close it. A closed year can never be changed.'); return; }
+  S.confirmYr = null; const live = yearData(y);
+  try { await S.db.doc(`years/${y}`).set({y, data: live, closedOn: iso(today()), at: new Date().toISOString()});
+    await logChange('report', `Closed the ${y} year report for good: ${yearLine(live)}.`, {tell: 'report', short: `Our ${y} year report is ready: ${yearLine(live)}.`}); toast('Closed'); render(); }
+  catch (e) { writeErr(e); render(); }
+}
+function yearHealth(add){   // for the self-check: a closed year that can't be read
+  for (const d of S.years) if (!d.data || typeof d.data !== 'object' || String(d.data.y) !== d.id) add('warn', 'Year report', `The closed ${d.id} year report can’t be read: reopen it and close it again.`);
+}
+function yearTiles(Y){
+  const tile = (icon, label, big, small, cls) => `<div class="ios-tile"><span class="t">${ico(icon)}${label}</span><b class="${cls || ''}">${big}</b><small>${small}</small></div>`;
+  return `<div class="ios-grid">${tile('addin', 'Money in', money(Y.in), 'pays and money added')}${tile('pay', 'Money out', money(Y.bills + Y.spend + Y.out), 'bills and purchases')}
+    ${tile('card', 'Card owes', Y.end ? money(Y.end.card) : '—', Y.start ? `from ${m0(Y.start.card)}` : 'no money check yet')}${tile('umbrella', 'Emergency fund', Y.end ? money(Y.end.ef) : '—', Y.start ? `from ${m0(Y.start.ef)}` : 'no money check yet')}</div>`;
+}
+function yearView(y){   // Thiago's screen: the answer first, the detail one tap away
+  const {Y, doc, closed, moved} = yearShown(y), out = Y.bills + Y.spend + Y.out, row = (dot, txt, sub, end) => `<div class="ios-row"><span class="dot ${dot}"></span><span class="txt">${txt}${sub ? `<small>${sub}</small>` : ''}</span><span class="end">${end}</span></div>`;
+  const state = closed ? `Closed for good on ${dshort(pd(doc.closedOn))}` : Y.done ? (yearToClose() === y ? 'Over: ready to close' : 'Over: it closes from 15 January') : `So far, to ${dshort(pd(Y.to))}`;
+  const cats = catRows(Object.fromEntries(Object.entries(Y.cats).filter(([c]) => !ESS_CATS.includes(c))), 6), ess = ESS_CATS.reduce((v, c) => v + num(Y.cats[c]), 0);
+  const C = RC_LIVE, chart = Y.months.length ? `<div class="ios-list pad"><div class="chartwrap">${resultColsSVG(Y.months.map(x => ({a: pd(`${x.m}-01`), v: x.partial ? null : x.end, proj: x.cur})), C)}</div><p class="mut fs85">Green: more came in than went out. A month the app only saw part of shows “no data”.</p></div>` : '';
+  const after = closed && moved ? row('idle', `Logged after ${y} closed`, 'it counts everywhere else, not in this report', '') : '';
+  const close = yearToClose() === y ? `<div class="actions"><button class="btn strong" data-act="yearClose" data-v="${y}">${S.confirmYr === y ? 'Sure? It can never be changed' : `Close the ${y} report for good`}</button></div><p class="mut fs85 tnote">Everything above is what will be kept. Rory is told it’s ready.</p>` : '';
+  return `<section class="ios-sec"><h2>${y} <small>${state}</small></h2>${yearTiles(Y)}
+      <div class="ios-list">${row(Y.net >= 0 ? 'ok' : 'bad', Y.net >= 0 ? 'In the black' : 'In the red', `${Y.done || closed ? 'the year' : 'the year so far'}, from ${dshort(pd(Y.from))}`, `${Y.net >= 0 ? '+' : '−'}${money(Math.abs(Y.net))}`)}${after}</div>
+      ${Y.from.slice(5) !== '01-01' ? `<p class="mut fs85 tnote">The app knows from ${dlong(pd(Y.from))}, so this year is short.</p>` : ''}</section>
+    <section class="ios-sec"><h2>Month by month</h2>${chart || '<p class="mut tnote">No month counted yet.</p>'}</section>
+    <section class="ios-sec"><h2>Where it went <small>${money(out)}</small></h2><div class="ios-list">
+      ${row('idle', 'Bills and debts', `with Wise${Y.interest ? ` and ${money(Y.interest)} card interest` : ''}`, money(Y.bills))}${row('idle', 'Shop, cigarettes and drinks', ['Groceries', 'Cigarettes', 'Drinks'].map(c => `${c === 'Groceries' ? 'shop' : c.toLowerCase()} ${money(num(Y.cats[c]))}`).join(' · '), money(ess))}
+      ${taxRow('idle', 'Other purchases', cats.length ? cats.slice(0, 2).map(c => esc(c.label)).join(', ') : 'none', money(Y.spend - ess), `<div class="kv">${cats.map(c => `<span>${esc(c.label)}</span><span>${money(c.v)}</span>`).join('')}</div>`)}
+      ${Y.out ? row('idle', 'Moved to a personal account', '', money(Y.out)) : ''}</div></section>
+    <section class="ios-sec"><h2>Our rules</h2><div class="ios-list">
+      ${row(Y.rules.slips ? 'bad' : 'ok', 'Slips', 'impulse, or Rory told after', String(Y.rules.slips))}${row(Y.rules.impulse ? 'warn' : 'ok', 'Impulse buys', '', money(Y.rules.impulse))}
+      ${row(Y.rules.unexplained ? 'warn' : 'ok', 'Money we couldn’t explain', '', money(Y.rules.unexplained))}${row(Y.rules.pocket ? 'warn' : 'ok', 'Bills Pocket card used', 'rule 1', money(Y.rules.pocket))}</div></section>
+    <section class="ios-sec"><h2>Decisions</h2><div class="ios-list">${row('ok', 'Decided together', '', String(Y.decisions.together))}${row(Y.decisions.without ? 'bad' : 'ok', 'Decided without Rory', '', String(Y.decisions.without))}${row('idle', 'Not a choice', 'a price rise, a real bill', String(Y.decisions.other))}</div></section>
+    ${close}<div class="actions"><button class="btn" data-act="pdf" data-v="${y}"${S.busy ? ' disabled' : ''}>${S.busy ? 'Making the PDF…' : `Download the ${y} PDF`}</button></div>${S.canWrite ? `<div class="ios-list"><details><summary class="ios-row"><span class="dot idle"></span><span class="txt">See it as Rory sees it<small>his own design, the same as the PDF</small></span><span class="end">${ico('chev')}</span></summary><div class="rowbody full"><div class="preview">${yearBoard(Y, false)}</div></div></details></div>` : ''}`;
+}
+function yearBoard(Y, forPdf){   // the year in Rory's own design (his view, and the PDF): one page, the answer first
+  const C = forPdf ? RC_PAPER : RC_LIVE, st0 = Y.net >= 0 ? 'ok' : 'bad', out = Y.bills + Y.spend + Y.out, ess = ESS_CATS.reduce((v, c) => v + num(Y.cats[c]), 0);
+  const big = (label, v, sub) => `<div class="bk"><span class="bl">${label}</span><b>${v}</b><small>${sub}</small></div>`;
+  const li = (bad, t) => `<li class="${bad ? 'warn' : 'ok'}"><span class="bi">${bad ? '!' : '✓'}</span>${t}</li>`;
+  return `<div class="board">
+    <div class="bhead"><div><span class="bl">Week by Week · our year</span><h2>${Y.y}${Y.done ? '' : ' so far'}</h2></div><div class="bverdict ${st0}"><span>${st0 === 'ok' ? '✓' : '✕'}</span>${st0 === 'ok' ? 'In the black' : 'In the red'} ${m0(Math.abs(Y.net))}</div></div>
+    <div class="bkpis">${big('Money in', m0(Y.in), 'pays, refunds, money added')}${big('Money out', m0(out), 'bills, debts, purchases')}${big('Card owes', Y.end ? m0(Y.end.card) : '—', Y.start ? `from ${m0(Y.start.card)}` : '')}${big('Emergency fund', Y.end ? m0(Y.end.ef) : '—', Y.start ? `from ${m0(Y.start.ef)}` : '')}</div>
+    ${Y.months.length ? `<section class="bcard wide"><h3>Each month <span class="bh">more in than out is green</span></h3><div class="chartwrap">${resultColsSVG(Y.months.map(x => ({a: pd(`${x.m}-01`), v: x.partial ? null : x.end, proj: x.cur})), C)}</div></section>` : ''}
+    <div class="bgrid"><section class="bcard"><h3>Where it went</h3>${donutHTML([{label: 'Bills and debts', v: Y.bills, c: C.s1}, {label: 'Shop, cigarettes, drinks', v: ess, c: C.s2}, {label: 'Other purchases', v: Y.spend - ess, c: C.s3}, {label: 'To a personal account', v: Y.out, c: C.s4}], {big: m0(out), small: 'out'}, C, 'Where the money went')}</section>
+      <section class="bcard"><h3>Our rules</h3><ul class="bheads">${li(Y.rules.slips, `${Y.rules.slips} slip${Y.rules.slips === 1 ? '' : 's'}`)}${li(Y.rules.unexplained, `${m0(Y.rules.unexplained)} we couldn’t explain`)}${li(Y.rules.pocket, `${m0(Y.rules.pocket)} from the Bills Pocket card`)}${li(Y.decisions.without, `${Y.decisions.together} decided together, ${Y.decisions.without} without Rory`)}</ul></section></div>
+    <section class="bcard wide"><h3>Tax year <span class="bh">for reference, not tax advice</span></h3><ul class="bheads">${li(false, `Thiago: ${m0(Y.tax.thiago)} Illness Benefit (the Department tells Revenue)`)}${li(false, `Rory: ${m0(Y.tax.rory)} pay, after tax`)}${li(false, `Health: ${m0(Y.tax.health)}, about ${m0(Y.tax.likely)} likely to count`)}${li(false, `From mid-January: each of us opens his Preliminary End of Year Statement in myAccount`)}</ul></section>
+    <p class="bfoot">${Y.from.slice(5) !== '01-01' ? `Counted from ${dlong(pd(Y.from))}, when we started. ` : ''}${forPdf ? `Made ${dlong(today())} · every number comes from our Week by Week system` : ''}</p>
+  </div>`;
+}
+function yearPick(form, ys){   // the last 6 years as tabs (Ireland keeps records 6 years); a closed year older than that stays for good, one tap away
+  const tab = list => seg(form, 'y', list.map(v => [String(v), String(v)])), n = ys.length - 6;
+  return {tabs: ys.length > 1 ? tab(ys.slice(0, 6)) : '', older: n > 0 ? `<div class="ios-list">${taxRow('idle', 'Older years', `${n} year${n === 1 ? '' : 's'}, kept for good`, '', `<div class="actions">${tab(ys.slice(6))}</div>`)}</div>` : ''};
+}
+function vYear(){
+  const ys = taxYears(); S.f.year.y ||= String(yearToClose() || ys[0]); const y = ys.includes(Number(S.f.year.y)) ? Number(S.f.year.y) : ys[0], T = taxYear(y), view = S.f.year.view === 'tax' ? 'tax' : 'year';
+  const P = yearPick('year', ys);
+  return `<div class="stack"><div class="actions">${P.tabs}${seg('year', 'view', [['year', 'The year'], ['tax', 'Tax']])}</div>${P.older}
+    ${view === 'tax' ? `${taxGlance(T)}${taxNext(T)}${taxHealthList(T)}${taxIncome(T)}${taxInterest(T)}${taxWhere(T)}${taxRules()}` : yearView(y)}</div>`;
 }
 
 /* ---------- Money, Plan, Settings ---------- */
-function vMoney(){ const k = S.sub.money; return `${subnav('money')}${k === 'debts' ? vCard() : k === 'spending' ? vSpending() : k === 'bills' ? vBills() : k === 'energy' ? vEnergy() : k === 'transfers' ? vTransfersPage() : k === 'tax' ? vTax() : vBalance()}`; }
+function vMoney(){ const k = S.sub.money; return `${subnav('money')}${k === 'debts' ? vCard() : k === 'spending' ? vSpending() : k === 'bills' ? vBills() : k === 'energy' ? vEnergy() : k === 'transfers' ? vTransfersPage() : k === 'year' ? vYear() : vBalance()}`; }
 function vPlanTab(){ const k = S.sub.plan; return `${subnav('plan')}${k === 'advisor' ? vAdvisor() : k === 'budget' ? vBudget() : k === 'compare' ? vCompare() : k === 'ready' ? vReady() : vPlan()}`; }
 function factsPanel(){   // the Irish rules and rates the system uses, with where each one comes from
   const age = dayDiff(pd(factsCheckedOn()), today()), live = !!(S.facts && S.facts.checkedOn);
@@ -6737,11 +6825,11 @@ async function stepSave(wsI, id, quick){
 
 /* ---------- PDF ---------- */
 function loadScript(src){ return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('Could not load ' + src)); document.head.appendChild(s); }); }
-async function pdfBlob(ws){   // Rory's report as an A4 PDF: page 1 and page 2 of his live report, each on its own sheet
+async function pdfBlob(pages){   // Rory's report (or the year) as an A4 PDF: each page on its own sheet
   if (!window.html2canvas) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
   if (!window.jspdf) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
-  const D = reportData(ws), stage = $('#pdfStage');
-  stage.innerHTML = `<div class="paper">${reportBoard(ws, true, D)}</div><div class="paper">${reportDetails(ws, true, D)}</div>`;
+  const stage = $('#pdfStage');
+  stage.innerHTML = pages.map(h => `<div class="paper">${h}</div>`).join('');
   if (document.fonts && document.fonts.ready) await document.fonts.ready;
   const pdf = new window.jspdf.jsPDF({unit: 'mm', format: 'a4'}), nodes = Array.from(stage.children);
   for (let i = 0; i < nodes.length; i++){
@@ -6755,16 +6843,16 @@ function pdfSheet(pdf, canvas){   // one page of the report, scaled to fit an A4
   const pw = 210, ph = 297, hh = Math.min(ph, canvas.height * pw / canvas.width), ww = hh === ph ? canvas.width * ph / canvas.height : pw;
   pdf.addImage(canvas.toDataURL('image/jpeg', 0.86), 'JPEG', (pw - ww) / 2, 0, ww, hh);
 }
-async function makePdf(){
+async function makePdf(y){   // the week's report for Rory (pages 1 and 2), or a year's report (one page)
   const dl = await appUse('downloads');
-  const ws = S.reportWeek ? pd(S.reportWeek) : weekStartOf(today());
+  const ws = S.reportWeek ? pd(S.reportWeek) : weekStartOf(today()), D = y ? null : reportData(ws);
   S.busy = true; render();
   const lookWas = document.documentElement.dataset.look; document.documentElement.dataset.look = 'classic';   // Rory's PDF keeps its own look
   const done = () => { $('#pdfStage').innerHTML = ''; document.documentElement.dataset.look = lookWas; S.busy = false; render(); };
   let blob;
-  try { blob = await pdfBlob(ws); done(); }
+  try { blob = await pdfBlob(y ? [yearBoard(yearShown(y).Y, true)] : [reportBoard(ws, true, D), reportDetails(ws, true, D)]); done(); }
   catch (e) { console.warn(e); done(); toast('The PDF couldn’t be made. Try again.'); return; }
-  try { await dl.save({filename: `Week by Week ${iso(ws)}.pdf`, data: blob}); toast('PDF saved'); }
+  try { await dl.save({filename: `Week by Week ${y || iso(ws)}.pdf`, data: blob}); toast('PDF saved'); }
   catch (e) { if (e && e.code !== 'declined') toast(e.code === 'rate_limited' ? 'A save is already waiting. Try again in a moment.' : 'The PDF couldn’t be saved here.'); }
 }
 
@@ -6812,6 +6900,7 @@ document.addEventListener('click', async e => {
     case 'mvSave': moveSave(); break;
     case 'addSave': await addSave(); break;
     case 'screenCheck': S._sc = screenCheck(); render(); break;
+    case 'yearClose': await yearClose(Number(b.dataset.v)); break;
     case 'mvDel': { if (S.confirmMv !== b.dataset.id){ S.confirmMv = b.dataset.id; render(); toast('Click again to delete the move and everything it did.'); break; } S.confirmMv = null; await moveDel(b.dataset.id); break; }
     case 'mvUndo': await moveDel(b.dataset.id); break;
     case 'goMove': S.tab = 'money'; S.sub.money = 'transfers'; S.err = ''; render(); document.getElementById('movesPanel')?.scrollIntoView({block: 'start'}); break;
@@ -6877,7 +6966,7 @@ document.addEventListener('click', async e => {
     case 'wkNext': { const ws = S.reportWeek ? pd(S.reportWeek) : weekStartOf(today()); const n = addDays(ws, 7); S.reportWeek = n > weekStartOf(today()) ? null : iso(n); render(); break; }
     case 'wkNow': S.reportWeek = null; render(); break;
     case 'wkNote': { const ws = S.reportWeek || iso(weekStartOf(today())); const v = S.f.note[ws]; if (v == null) { toast('Nothing changed'); break; } await weekUpdate(ws, {note: String(v)}); delete S.f.note[ws]; toast('Note saved'); break; }
-    case 'pdf': if (!S.busy) makePdf(); break;
+    case 'pdf': if (!S.busy) makePdf(Number(b.dataset.v) || 0); break;
     case 'decSave': { if (!needDb()) break; const t = String(S.f.dec.text || '').trim(); if (!t) { toast('Write the decision first.'); break; } await logChange('decision', t); S.f.dec.text = ''; toast('Saved to history'); render(); break; }
     case 'gapLog': case 'gapNote': case 'gapUnk': await gapAction(a, b); break;
     case 'unkSave': unkSave(); break;
