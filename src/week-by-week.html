@@ -613,6 +613,13 @@ details > summary{cursor:pointer;font-weight:700;font-family:var(--f-display);pa
 .ios-row .txt small{display:block;color:var(--muted);font-size:.82rem}
 .ios-row .end{display:flex;align-items:center;gap:6px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 .ios-row .end svg{width:14px;height:14px;opacity:.5}
+.ios-list > details > summary.ios-row{list-style:none}.ios-list > details > summary.ios-row::-webkit-details-marker{display:none}
+.ios-list > * + * > summary.ios-row::before, .ios-list > details + .ios-row::before{content:"";position:absolute;top:0;left:50px;right:0;border-top:.5px solid var(--rule)}
+.ios-list > details[open] > summary.ios-row .end svg{transform:rotate(90deg)}
+.ios-list .rowbody{padding:2px 16px 16px 50px;display:grid;gap:10px}.ios-list .rowbody p{margin:0;line-height:1.45}.ios-list .rowbody .rules{padding-left:20px}
+.taxitem{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:baseline;font-size:.95rem}.taxitem small{display:block;color:var(--muted);font-size:.82rem;margin-top:2px}.taxitem b{font-weight:600;font-variant-numeric:tabular-nums}
+.tnote{padding:0 6px;margin:2px 0 0}
+a.ios-row{text-decoration:none}
 .ios-row.done .txt{color:var(--muted)} .ios-row.done .end{color:var(--ok)}
 .ios-day{width:38px;text-align:center;line-height:1.1}
 .ios-day small{display:block;font:600 .66rem var(--f-body);color:var(--badf);text-transform:uppercase}
@@ -997,7 +1004,7 @@ const S = {
   f:{
     bill:null, set:null, plan:null,
     bal:{date:'', amount:''}, pay:{date:'', amount:'', note:''}, sch:{date:'', amount:'', note:''},
-    spend:{date:'', what:'', amount:'', cat:'', paidFrom:'joint', who:'', kind:'need', told:'before', note:''}, as:{name:'', kind:'cash', value:'', date:'', side:'own'}, unk:{date:'', paidFrom:'joint'},
+    tax:{y: String(new Date().getFullYear())}, spend:{date:'', what:'', amount:'', cat:'', paidFrom:'joint', who:'', kind:'need', told:'before', note:''}, as:{name:'', kind:'cash', value:'', date:'', side:'own'}, unk:{date:'', paidFrom:'joint'},
     check:{what:'', price:'', paidFrom:'joint', who:'', need:'', told:''}, add:{date:'', amount:'', to:'joint', who:'', how:'', note:''},
     dec:{text:''}, what:{extra:''}, note:{}, wise:{date:'', eur:'', fee:'', brl:'', purpose:'Psychologist'}, chk:{date:'', joint:'', bills:'', vaults:'', ef:'', aib:'', card:'', note:''}, kl:{what:'', total:'', date:'', n:'3', every:'month', first:'', paidFrom:'card', who:''}, wi:{what:'', monthly:'', months:'', start:''}, wiRm:{}, mv:{date:'', from:'', to:'', amount:'', note:'', kind:'', bill:''}, en:{upTo:'', kwh:'', eur:''}, enb:{}, ln:{what:'', lender:'', financed:'', instalment:'', n:'', every:'month', start:'', first:'', paidFrom:'bills', lastAmount:'', who:'both', note:''}
   }
@@ -1019,7 +1026,21 @@ const FACTS0 = {
   christmasBonus: {v: 100, week: '2026-12-07', label: 'Christmas Bonus', unit: '% of one week', note: 'Paid the week starting 7 Dec 2026. Illness Benefit qualifies only after 12 months on the payment.', url: 'https://www.citizensinformation.ie/en/social-welfare/irish-social-welfare-system/christmas-bonus/'},
   degiro: {v: 1, label: 'DEGIRO, Core Selection ETF trade', unit: ' fee', note: 'Other ETFs €2 + €1 handling. €2.50 a year per non-home exchange. Auto FX 0.25%. No Irish tax statement: exit tax and deemed disposal are worked out and paid by us.', url: 'https://etf.ie/blog/degiro-ireland-review/'},
   bankHolidays: {v: 10, label: 'Bank holidays (Ireland)', unit: ' a year', extra: [], welfareEarly: [], note: 'Worked out every year: 1 Jan, St Brigid’s Day (first Monday of February, or 1 Feb if a Friday), 17 Mar, Easter Monday, first Monday of May, June and August, last Monday of October, 25 and 26 Dec. Good Friday isn’t a public holiday, but banks and welfare payments treat it like one. When a holiday falls on a weekend, banks close the next weekday. Social welfare due on a bank holiday, or on the Friday before a bank holiday Monday, is paid the working day before.', url: 'https://www.citizensinformation.ie/en/employment/employment-rights-and-conditions/leave-and-holidays/public-holidays/'},
-  autoEnrol: {v: 1.5, label: 'Auto-enrolment (MyFutureFund)', unit: '% each', note: '2026–2028: 1.5% from the employee, 1.5% from the employer, 0.5% State top-up, on pay up to €80,000. Not for jobs that already pay into a pension through payroll. Rises to 3% in 2029.', url: 'https://www.gov.ie/en/department-of-social-protection/publications/myfuturefund-contribution-examples-for-employees'}
+  autoEnrol: {v: 1.5, label: 'Auto-enrolment (MyFutureFund)', unit: '% each', note: '2026–2028: 1.5% from the employee, 1.5% from the employer, 0.5% State top-up, on pay up to €80,000. Not for jobs that already pay into a pension through payroll. Rises to 3% in 2029.', url: 'https://www.gov.ie/en/department-of-social-protection/publications/myfuturefund-contribution-examples-for-employees'},
+  taxYear: {label: 'Rules for the yearly tax summary (Ireland)', checked: '2026-11-13', rules: [
+    {id: 'year', t: 'The tax year is the calendar year. A refund for a year can be claimed until 31 December four years later (for 2022, until 31 December 2026).', url: 'https://www.revenue.ie/en/additional-incomes/documents/dirt/form54-claims.pdf'},
+    {id: 'single', t: 'Couples who live together but aren’t married or in a civil partnership are taxed as single people: each of us is taxed on his own income and claims his own reliefs.', url: 'https://www.revenue.ie/en/life-events-and-personal-circumstances/marital-status/cohabiting-couples/index.aspx'},
+    {id: 'ib', t: 'Illness Benefit is taxable in full (no PRSI or USC). The Department of Social Protection tells Revenue how much was paid, and Revenue collects any tax by reducing tax credits: nothing to declare.', url: 'https://www.revenue.ie/en/jobs-and-pensions/taxation-of-social-welfare-payments/illness-occupational-injury-partial-capacity-benefits.aspx'},
+    {id: 'salary', t: 'A salary is taxed through payroll. The Employment Detail Summary in myAccount shows the pay and the tax, PRSI and USC taken, from January after the year.', url: 'https://www.citizensinformation.ie/en/employment/employment-rights-and-conditions/pay-and-employment/employment-detail-summary/'},
+    {id: 'health', t: 'Health expenses get relief at 20%, paid as a refund of tax paid that year. Each person claims the part he paid. Claim within 4 years; keep the receipts for 6 years.', url: 'https://www.revenue.ie/en/personal-tax-credits-reliefs-and-exemptions/health-and-age/health-expenses/how-do-you-claim-health-expenses.aspx'},
+    {id: 'doctor', t: 'A doctor’s or consultant’s fees count. Care abroad counts when the practitioner is registered to practise medicine in that country.', url: 'https://www.revenue.ie/en/personal-tax-credits-reliefs-and-exemptions/health-and-age/health-expenses/what-are-qualifying-expenses.aspx'},
+    {id: 'psych', t: 'A psychologist or psychotherapist counts only if he or she is a registered doctor, or a doctor referred you for a diagnostic procedure.', url: 'https://www.revenue.ie/en/personal-tax-credits-reliefs-and-exemptions/health-and-age/health-expenses/what-are-qualifying-expenses.aspx'},
+    {id: 'meds', t: 'Medicines count only when a doctor prescribed them (or a pharmacist through the Common Conditions Service).', url: 'https://www.revenue.ie/en/tax-professionals/tdm/income-tax-capital-gains-tax-corporation-tax/part-15/15-01-12.pdf'},
+    {id: 'hearing', t: 'A hearing aid used on a doctor’s advice counts, and so do its running costs, such as batteries.', url: 'https://www.revenue.ie/en/tax-professionals/tdm/income-tax-capital-gains-tax-corporation-tax/part-15/15-01-12.pdf'},
+    {id: 'dirt', t: 'Irish savings interest: the bank takes DIRT (33%) and that settles the tax; nothing to declare unless you already file a return. The bank’s yearly statement shows the interest before and after DIRT.', url: 'https://www.revenue.ie/en/additional-incomes/dirt/what-dirt-rate-is-applicable.aspx'},
+    {id: 'foreign', t: 'Interest from a bank outside the EU (Nubank, in Brazil) is taxable in Ireland and must be declared: at least 33%, or 40% if it isn’t declared on time.', url: 'https://www.revenue.ie/en/additional-incomes/dirt/foreign-deposit-income.aspx'},
+    {id: 'peoys', t: 'From mid-January, each of us can see the year’s Preliminary End of Year Statement in myAccount (Review your tax for the previous 4 years): it shows whether too much or too little tax was paid, and health expenses are claimed there.', url: 'https://www.citizensinformation.ie/en/money-and-tax/tax/income-tax/how-to-review-your-paye-tax/'}
+  ]}
 };
 const FACT_ORDER = ['bankHolidays', 'revolutSavingsAer', 'dirt', 'illnessBenefit', 'christmasBonus', 'pia', 'exitTax', 'deemedDisposal', 'cgt', 'degiro', 'autoEnrol'];
 const factsCheckedOn = () => (S.facts && S.facts.checkedOn) || FACTS0.checkedOn;
@@ -5503,7 +5524,7 @@ function cardIntPanel(){
 }
 
 /* ---------- system health: the page checks itself every time it opens; Claude runs the full check every Monday ---------- */
-const APP_VERSION = '2026.11.13-2';
+const APP_VERSION = '2026.11.13-3';
 function selfCheck(){   // cheap checks on the data, run on every open: things that don't fit, and the weekly tasks that should have run
   const key = `${S._rt}|${iso(today())}`; if (S._hc && S._hc.k === key) return S._hc.v;
   const items = [], t = today(), add = (st2, area, txt) => items.push({st: st2, area, t: txt});
@@ -5569,6 +5590,7 @@ function selfCheck(){   // cheap checks on the data, run on every open: things t
     }
     { const a = backupAge(); if (a == null || a > 35) add('idle', 'Backup', a == null ? 'No backup downloaded yet.' : `Last backup ${a} days ago.`); }
     cmpHealth(add);
+    taxHealth(add);   // Tax summary: every rule from an official source
     prepHealth(add);   // Ready: official updates only from allowed sources, kit items, cash at home   // Compare: comparisons pointing at bills or a switch that aren't there any more
   } catch (e) { console.error(e); add('bad', 'System', 'The self-check itself hit an error: ' + (e && e.message || e)); }
   const v = {items, at: new Date().toISOString(), st: items.some(x => x.st === 'bad') ? 'bad' : items.some(x => x.st === 'warn') ? 'warn' : 'ok'};
@@ -5925,8 +5947,8 @@ async function asSave(){
 
 /* ---------- navigation: 5 places ---------- */
 const NAV = [['today', 'Today'], ['week', 'Week'], ['pay', 'Pay'], ['money', 'Money'], ['plan', 'Plan'], ['settings', 'Settings']];
-const SUBS = {money: [['balance', 'Balance'], ['bills', 'Bills'], ['energy', 'Electricity'], ['debts', 'Debts'], ['spending', 'Spending'], ['transfers', 'Transfers']], plan: [['plan', 'Plan'], ['advisor', 'Advisor'], ['budget', 'Budget'], ['compare', 'Compare'], ['ready', 'Ready']], settings: [['setup', 'Setup'], ['rules', 'Rules'], ['health', 'System'], ['history', 'History']]};
-const ROUTE = {compare: ['plan', 'compare'], ready: ['plan', 'ready'], prep: ['plan', 'ready'], advisor: ['plan', 'advisor'], wishlist: ['plan', 'advisor'], payments: ['pay'], payment: ['pay'], balance: ['money', 'balance'], overview: ['today'], shield: ['today'], report: ['week'], transfers: ['money', 'transfers'], wise: ['money', 'transfers'], budget: ['plan', 'budget'], bills: ['money', 'bills'], review: ['plan', 'budget'], energy: ['money', 'energy'], electricity: ['money', 'energy'], card: ['money', 'debts'], debts: ['money', 'debts'], spending: ['money', 'spending'], history: ['settings', 'history'], setup: ['settings', 'setup'], rules: ['settings', 'rules'], system: ['settings', 'health'], health: ['settings', 'health']};
+const SUBS = {money: [['balance', 'Balance'], ['bills', 'Bills'], ['energy', 'Electricity'], ['debts', 'Debts'], ['spending', 'Spending'], ['transfers', 'Transfers'], ['tax', 'Tax']], plan: [['plan', 'Plan'], ['advisor', 'Advisor'], ['budget', 'Budget'], ['compare', 'Compare'], ['ready', 'Ready']], settings: [['setup', 'Setup'], ['rules', 'Rules'], ['health', 'System'], ['history', 'History']]};
+const ROUTE = {tax: ['money', 'tax'], compare: ['plan', 'compare'], ready: ['plan', 'ready'], prep: ['plan', 'ready'], advisor: ['plan', 'advisor'], wishlist: ['plan', 'advisor'], payments: ['pay'], payment: ['pay'], balance: ['money', 'balance'], overview: ['today'], shield: ['today'], report: ['week'], transfers: ['money', 'transfers'], wise: ['money', 'transfers'], budget: ['plan', 'budget'], bills: ['money', 'bills'], review: ['plan', 'budget'], energy: ['money', 'energy'], electricity: ['money', 'energy'], card: ['money', 'debts'], debts: ['money', 'debts'], spending: ['money', 'spending'], history: ['settings', 'history'], setup: ['settings', 'setup'], rules: ['settings', 'rules'], system: ['settings', 'health'], health: ['settings', 'health']};
 function normTab(){ const r = ROUTE[S.tab]; if (r){ S.tab = r[0]; if (r[1]) S.sub[r[0]] = r[1]; } if (!NAV.some(n => n[0] === S.tab)) S.tab = 'today'; }
 function go(t){ if (t === 'plan'){ S.tab = 'plan'; S.sub.plan = 'plan'; } else { S.tab = t; normTab(); } S.err = ''; render(); window.scrollTo({top: 0}); }
 const subnav = k => `<div class="subnav" role="tablist" aria-label="Sections">${SUBS[k].map(([v, l]) => `<button type="button" role="tab" data-act="sub" data-k="${k}" data-v="${v}" aria-selected="${S.sub[k] === v}">${l}</button>`).join('')}</div>`;
@@ -6304,8 +6326,97 @@ function vWeek(){
   return `<div class="stack">${head}${transfersPanel(ws)}${checkFormPanel(ws)}${report}</div>`;
 }
 
+/* ---------- Money → Tax: a yearly summary for Ireland, for reference only (its rules live in config/facts.taxYear, each with its official source) ---------- */
+const TAX_HOSTS = ['revenue.ie', 'citizensinformation.ie', 'gov.ie'];
+const TAX_ST = {likely: ['ok', 'Likely to count'], check: ['warn', 'To check'], no: ['bad', 'Probably not']};
+const taxRule = id => (fact('taxYear').rules || []).find(r => r.id === id) || {};
+const taxSrc = r => r.url ? ` <a href="${esc(r.url)}" target="_blank" rel="noopener">Source</a>` : '';
+function taxKind(what){   // which of Revenue's health rules fits an expense, from what it was
+  const w = String(what || '').toLowerCase();
+  if (/psychiatr|doctor|\bgp\b|consultant|hospital/.test(w)) return {st: 'likely', r: 'doctor'};
+  if (/psycholog|psychother|counsel/.test(w)) return {st: 'no', r: 'psych'};
+  if (/hearing/.test(w)) return {st: 'likely', r: 'hearing'};
+  if (/medic|pharmac|prescri|tablet|drug/.test(w)) return {st: 'check', r: 'meds'};
+  return {st: 'check', r: 'health'};
+}
+function taxYear(y){   // what the app knows for one tax year (the calendar year): each pay ticked (what reached the Joint plus what was kept), health expenses, savings interest
+  const Y = String(y), t = today(), a = new Date(y - 1, 11, 31), z = new Date(y, 11, 31) < t ? new Date(y, 11, 31) : t, inc = {thiago: {tot: 0, by: {}}, rory: {tot: 0, by: {}}};
+  for (const r of a < t ? paydayRows(a, z) : []) if (r.done){ const v = r.amt + keepPay(r.who), k = iso(r.d).slice(0, 7), I = inc[r.who]; I.tot += v; I.by[k] = (I.by[k] || 0) + v; }
+  const health = [];
+  for (const x of S.spending) if (x.cat === 'Health' && String(x.date || '').startsWith(Y) && pd(x.date)) health.push({id: x.id, d: pd(x.date), what: x.what || 'Health', amt: num(x.amount), from: x.paidFrom, ...taxKind(x.what)});
+  for (const b of S.bills) if (b.cat === 'Health') for (const h of b.history || []) if (String(h.date || '').startsWith(Y) && pd(h.date)){
+    const wz = h.wiseId ? S.wise.find(v => v.id === h.wiseId) : null, fee = wz ? num(wz.fee) : 0;   // the Wise fee isn't health care
+    health.push({id: `${b.id}:${h.date}`, d: pd(h.date), what: b.name, amt: num(h.amount) - fee, fee, from: b.account, vault: !!b.vault, ...taxKind(b.name)}); }
+  health.sort((p, q) => q.d - p.d);
+  const sum = k => health.filter(x => !k || x.st === k).reduce((v, x) => v + x.amt, 0);
+  let net = 0; for (const [d, v] of Object.entries(efSeries().byDay)) if (d.startsWith(Y)) net += v;
+  const s0 = st().startedOn || '';
+  return {y, inc, health, tot: sum(), likely: sum('likely'), check: sum('check'), no: sum('no'), net, gross: net / (1 - factV('dirt', `${Y}-12-31`) / 100), from: s0.startsWith(Y) ? pd(s0) : null};
+}
+function taxYears(){   // this year back to the first year the app knows anything about
+  const s0 = pd(st().startedOn), first = [s0 ? s0.getFullYear() : today().getFullYear(), ...S.bills.filter(b => b.cat === 'Health').flatMap(b => (b.history || []).map(h => pd(h.date)).filter(Boolean).map(d => d.getFullYear()))];
+  const out = []; for (let y = today().getFullYear(); y >= Math.min(...first); y--) out.push(y); return out;
+}
+function taxHealth(add){   // for the self-check: every rule of the tax summary comes from an official source
+  for (const r of fact('taxYear').rules || []){ let h = ''; try { h = new URL(r.url).hostname; } catch (e) { h = ''; }
+    if (!TAX_HOSTS.some(x => h === x || h.endsWith('.' + x))) add('warn', 'Tax summary', `A rule has no official source (revenue.ie, citizensinformation.ie or gov.ie): “${String(r.t || r.id || '').slice(0, 60)}”.`); }
+}
+const taxRow = (dot, txt, sub, end, body) => `<details><summary class="ios-row"><span class="dot ${dot}"></span><span class="txt">${txt}${sub ? `<small>${sub}</small>` : ''}</span><span class="end">${end}${ico('chev')}</span></summary><div class="rowbody">${body}</div></details>`;   // one tidy iPhone row that opens its detail underneath
+function taxGlance(T){   // the answer first: four numbers, like Today's tiles
+  const typ = who => st()[WHO_INC[who].type] || WHO_INC[who].def, sub = who => typ(who) === 'welfare' ? 'Illness Benefit, taxable' : typ(who) === 'salary' ? 'Salary, after tax' : 'Other income';
+  const tile = (icon, label, big, small) => `<div class="ios-tile"><span class="t">${ico(icon)}${label}</span><b>${big}</b><small>${small}</small></div>`;
+  return `<section class="ios-sec"><h2>${T.y} <small>for reference only</small></h2><div class="ios-grid">
+    ${tile('euro', 'Thiago', money(T.inc.thiago.tot), sub('thiago'))}${tile('euro', 'Rory', money(T.inc.rory.tot), sub('rory'))}
+    ${tile('plus', 'Health', money(T.tot), `${money(T.likely)} likely to count`)}${tile('umbrella', 'Savings interest', money(T.net), 'after DIRT, estimate')}
+  </div>${T.from ? `<p class="mut fs85 tnote">The app knows from ${dlong(T.from)}, plus the bill payments logged before it.</p>` : ''}</section>`;
+}
+function taxNext(T){
+  const y = T.y, row = (when, what) => `<div class="ios-row"><span class="dot idle"></span><span class="txt">${when}<small>${what}</small></span><span class="end"></span></div>`;
+  return `<section class="ios-sec"><h2>What’s next</h2><div class="ios-list">${today() < new Date(y + 1, 0, 15) ? row(`Mid-January ${y + 1}`, `Each of you: open the ${y} Preliminary End of Year Statement in myAccount`) : row('Now', `Each of you: open the ${y} Preliminary End of Year Statement in myAccount`)}${T.likely > 0 ? row(`By 31 Dec ${y + 4}`, `The last day to claim ${y}’s health expenses`) : ''}</div></section>`;
+}
+function taxIncome(T){
+  const part = (who, nm, sub, txt) => { const by = T.inc[who].by, ks = Object.keys(by).sort();
+    return taxRow('idle', nm, sub, money(T.inc[who].tot), `${ks.length ? `<div class="kv">${ks.map(k => `<span>${esc(fMon.format(pd(`${k}-01`)))}</span><span>${money(by[k])}</span>`).join('')}</div>` : '<p class="mut">No pays ticked in this year.</p>'}<p class="mut fs85">${txt}</p>`); };
+  return `<section class="ios-sec"><h2>Income <small>${money(T.inc.thiago.tot + T.inc.rory.tot)}</small></h2><div class="ios-list">
+    ${part('thiago', 'Thiago', 'Illness Benefit', `What the Department paid; it pays without taking tax. ${esc(taxRule('ib').t || '')}`)}
+    ${part('rory', 'Rory', 'Salary, as it reached his account', 'After tax. His pay before tax, and the tax, PRSI and USC taken, are in his Employment Detail Summary.')}
+  </div></section>`;
+}
+function taxHealthList(T){   // grouped by what Revenue's rules say, the totals first; each expense one line inside
+  const grp = k => { const L = T.health.filter(x => x.st === k); if (!L.length) return '';
+    const rules = [...new Set(L.map(x => x.r))].map(r => `<p class="fs90">${esc(taxRule(r).t || '')}${taxSrc(taxRule(r))}</p>`).join('');
+    const item = x => `<div class="taxitem"><span>${esc(x.what)}<small>${dshort(x.d)} · ${esc((ACC[x.from] || {}).short || x.from || '')}${x.fee ? ` · ${money(x.fee)} Wise fee left out` : ''}</small></span><b>${money(x.amt)}</b></div>`;
+    return taxRow(TAX_ST[k][0], TAX_ST[k][1], `${L.length} expense${L.length === 1 ? '' : 's'}`, money(L.reduce((v, x) => v + x.amt, 0)), `${L.map(item).join('')}${rules}`); };
+  return `<section class="ios-sec"><h2>Health expenses <small>${money(T.tot)}</small></h2>${T.health.length ? `<div class="ios-list">${grp('likely')}${grp('check')}${grp('no')}</div>
+    <p class="mut fs85 tnote">Keep every receipt for 6 years (and the prescription for medicines). Paid with shared money, each of you claims only the part he paid.</p>` : '<p class="mut tnote">No health expenses logged in this year.</p>'}</section>`;
+}
+function taxInterest(T){
+  return `<section class="ios-sec"><h2>Savings interest</h2><div class="ios-list">
+    ${taxRow('ok', 'Revolut savings', `before DIRT about ${money(T.gross)}`, money(T.net), `<p class="fs90">${esc(taxRule('dirt').t || '')}${taxSrc(taxRule('dirt'))}</p><p class="mut fs85">An estimate from the fund’s balance and rate; Revolut’s yearly statement has the real figures.</p>`)}
+    ${taxRow('warn', 'Nubank', 'the app can’t see it', 'Check', `<p class="fs90">${esc(taxRule('foreign').t || '')}${taxSrc(taxRule('foreign'))}</p><p class="mut fs85">Look at its statement for any interest (rendimento) in ${T.y}.</p>`)}
+  </div></section>`;
+}
+function taxWhere(T){
+  const link = (txt, sub, url) => `<a class="ios-row" href="${esc(url)}" target="_blank" rel="noopener"><span class="dot idle"></span><span class="txt">${txt}<small>${sub}</small></span><span class="end">${ico('chev')}</span></a>`;
+  return `<section class="ios-sec"><h2>Where to check</h2><div class="ios-list">
+    ${link('Preliminary End of Year Statement', `Each of you · myAccount → Review your tax for the previous 4 years → ${T.y}`, 'https://www.citizensinformation.ie/en/money-and-tax/tax/income-tax/how-to-review-your-paye-tax/')}
+    ${link('Rory’s Employment Detail Summary', 'His pay before tax, and the tax, PRSI and USC taken', 'https://www.citizensinformation.ie/en/employment/employment-rights-and-conditions/pay-and-employment/employment-detail-summary/')}
+    ${link('Claim health expenses', 'Income Tax Return → Tax Credits & Reliefs → Health', 'https://www.revenue.ie/en/personal-tax-credits-reliefs-and-exemptions/health-and-age/health-expenses/how-do-you-claim-health-expenses.aspx')}
+    ${link('Not sure something counts?', 'Citizens Information; or ask Revenue in MyEnquiries', 'https://www.citizensinformation.ie/en/money-and-tax/tax/income-tax-credits-and-reliefs/taxation-and-medical-expenses/')}
+  </div></section>`;
+}
+function taxRules(){
+  const F = fact('taxYear'), R = F.rules || [];
+  return `<section class="ios-sec"><h2>Rules we use <small>checked ${dshort(pd(F.checked))}</small></h2><div class="ios-list">${taxRow('ok', `${R.length} rules`, 'Revenue and Citizens Information', '', `<ol class="rules">${R.map(r => `<li>${esc(r.t || '')}${taxSrc(r)}</li>`).join('')}</ol><p class="mut fs85">Claude re-checks them with the other rules every Sunday morning.</p>`)}</div>
+    <p class="mut fs85 tnote">Not tax advice. Revenue’s figures always win; for personal advice, Citizens Information or a tax adviser.</p></section>`;
+}
+function vTax(){
+  const ys = taxYears(), T = taxYear(ys.includes(Number(S.f.tax.y)) ? Number(S.f.tax.y) : ys[0]);
+  return `<div class="stack">${ys.length > 1 ? `<div class="actions">${seg('tax', 'y', ys.map(y => [String(y), String(y)]))}</div>` : ''}${taxGlance(T)}${taxNext(T)}${taxHealthList(T)}${taxIncome(T)}${taxInterest(T)}${taxWhere(T)}${taxRules()}</div>`;
+}
+
 /* ---------- Money, Plan, Settings ---------- */
-function vMoney(){ const k = S.sub.money; return `${subnav('money')}${k === 'debts' ? vCard() : k === 'spending' ? vSpending() : k === 'bills' ? vBills() : k === 'energy' ? vEnergy() : k === 'transfers' ? vTransfersPage() : vBalance()}`; }
+function vMoney(){ const k = S.sub.money; return `${subnav('money')}${k === 'debts' ? vCard() : k === 'spending' ? vSpending() : k === 'bills' ? vBills() : k === 'energy' ? vEnergy() : k === 'transfers' ? vTransfersPage() : k === 'tax' ? vTax() : vBalance()}`; }
 function vPlanTab(){ const k = S.sub.plan; return `${subnav('plan')}${k === 'advisor' ? vAdvisor() : k === 'budget' ? vBudget() : k === 'compare' ? vCompare() : k === 'ready' ? vReady() : vPlan()}`; }
 function factsPanel(){   // the Irish rules and rates the system uses, with where each one comes from
   const age = dayDiff(pd(factsCheckedOn()), today()), live = !!(S.facts && S.facts.checkedOn);

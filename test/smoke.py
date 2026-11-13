@@ -89,7 +89,7 @@ with sync_playwright() as p:
     check('Thiago: a delete is saved and shows', r['del'], r)
     check('Thiago: changing something that isn’t there is refused', r['missing'], r)
     check('the writes went to the database in order', r['writes'] == 'update,set,add,delete', r['writes'])
-    TABS = [('today', None), ('week', None), ('pay', None)] + [('money', x) for x in ['balance', 'bills', 'energy', 'debts', 'spending', 'transfers']] + \
+    TABS = [('today', None), ('week', None), ('pay', None)] + [('money', x) for x in ['balance', 'bills', 'energy', 'debts', 'spending', 'transfers', 'tax']] + \
            [('plan', x) for x in ['plan', 'advisor', 'budget', 'compare', 'ready']] + [('settings', x) for x in ['setup', 'rules', 'health', 'history']]
     bad_tabs = []
     for tab, sub in TABS:   # with the app's own stylesheet loaded, every screen still draws as the page does (nothing of ours covers it)

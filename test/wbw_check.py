@@ -33,7 +33,7 @@ results, notes = [], {}
 def check(name, ok, info=''):
     results.append({'name': name, 'ok': bool(ok), 'info': str(info)[:400]}); print(('PASS ' if ok else 'FAIL ') + name + (f'  [{str(info)[:200]}]' if info != '' else ''), flush=True)
 
-TABS = [('today', None), ('week', None), ('pay', None)] + [('money', x) for x in ['balance', 'bills', 'energy', 'debts', 'spending', 'transfers']] + \
+TABS = [('today', None), ('week', None), ('pay', None)] + [('money', x) for x in ['balance', 'bills', 'energy', 'debts', 'spending', 'transfers', 'tax']] + \
        [('plan', x) for x in ['plan', 'advisor', 'budget', 'compare', 'ready']] + [('settings', x) for x in ['setup', 'rules', 'health', 'history']]
 # phone fit: nothing past the edge, squeezed into a narrow column, or drawn on top of other text
 PROBE = r"""() => {
@@ -1102,6 +1102,52 @@ with sync_playwright() as p:
                 f = ev(PROBE); check(f'Budget: both bars fit the phone ({wd} px, {"dark" if dark else "light"})', not f, f[:6])
         pg.set_viewport_size({'width': 390, 'height': 900}); pg.emulate_media(color_scheme='light')
     step('budget', f_budget)
+
+    # ---- Money → Tax: the yearly summary for Ireland (the kit states the rules itself) ----
+    def f_tax():
+        load(NOW); y = NOW.year
+        ev("() => { S.tab = 'money'; S.sub.money = 'tax'; render(); }"); v = view()
+        check('Tax: Money → Tax draws the year’s four numbers first, what’s next, says plainly it is not tax advice, and keeps the detail one tap away', f'{y}\nfor reference only' in v and 'Not tax advice' in v and 'What’s next' in v and ev("() => document.querySelectorAll('#view .ios-tile').length") == 4 and ev("() => document.querySelectorAll('#view .ios-list > details:not([open])').length") >= 5, v[:400])
+        n0 = ev("() => S.changelog.length")
+        I = ev(f"""() => {{ const out = {{thiago: 0, rory: 0}};   // every pay ticked whose payday is in the year: what reached the Joint (the real amount, else the plan) plus what was kept
+            for (const [ws, w] of Object.entries(S.weeks)) for (const who of ['thiago', 'rory']) {{ if (!(w.transfers || {{}})[who]) continue; const pdx = payDate(who, pd(ws)), d = pdx ? pdx.d : addDays(pd(ws), 4); if (d.getFullYear() !== {y} || d > today()) continue;
+              const am = (w.amounts || {{}})[who], keep = num(st()[WHO_INC[who].keep]); out[who] += (am && has(am.a) ? num(am.a) : am && has(am.p) ? num(am.p) : Math.max(0, num(st()[WHO_INC[who].inc]) - keep)) + keep; }}
+            const T = taxYear({y}); return {{want: out, got: {{thiago: T.inc.thiago.tot, rory: T.inc.rory.tot}}}}; }}""")
+        check('Tax: each person’s income is every pay ticked in the year, at what really came plus what was kept', all(abs(I['want'][k] - I['got'][k]) < .01 for k in I['want']), I)
+        H = ev(f"""() => {{ const Y = '{y}', D = Y + '-03-10';
+            S.wise = S.wise.concat([{{id: 'kitw', date: D, eur: 100, fee: 2, purpose: 'Kit psychologist'}}]);
+            S.bills = S.bills.concat([{{id: 'kitpsy', name: 'Kit psychologist', cat: 'Health', freq: 'monthly', dueDay: 10, amount: 100, account: 'nubank', active: true, history: [{{date: D, due: D, amount: 100, wiseId: 'kitw'}}, {{date: '{y - 1}-03-10', due: '{y - 1}-03-10', amount: 100}}]}}]);
+            S.spending = S.spending.concat([{{id: 'kitm', date: D, what: 'Kit prescribed medicine', amount: 12, cat: 'Health', paidFrom: 'thiago', who: 'thiago'}}, {{id: 'kith', date: D, what: 'Kit hearing aid batteries', amount: 8, cat: 'Health', paidFrom: 'joint', who: 'thiago'}},
+              {{id: 'kitp', date: D, what: 'Kit psychiatrist (HSE)', amount: 60, cat: 'Health', paidFrom: 'joint', who: 'thiago'}}, {{id: 'kitg', date: D, what: 'Kit groceries', amount: 50, cat: 'Groceries', paidFrom: 'joint', who: 'both'}}, {{id: 'kitl', date: '{y - 1}-06-01', what: 'Kit old medicine', amount: 9, cat: 'Health', paidFrom: 'joint', who: 'thiago'}}]);
+            const T = taxYear({y}), row = id => T.health.find(x => x.id === id) || null;
+            let want = 0; for (const x of S.spending) if (x.cat === 'Health' && String(x.date).startsWith(Y)) want += num(x.amount);   // the year's Health purchases and Health bill payments, less any Wise fee
+            for (const b of S.bills) if (b.cat === 'Health') for (const h of b.history || []) if (String(h.date).startsWith(Y)) {{ const w = h.wiseId && S.wise.find(q => q.id === h.wiseId); want += num(h.amount) - (w ? num(w.fee) : 0); }}
+            return {{psy: row('kitpsy:' + D), med: row('kitm'), hear: row('kith'), doc: row('kitp'), groc: row('kitg'), old: row('kitl'), oldPsy: T.health.some(x => x.id === 'kitpsy:{y - 1}-03-10'), tot: T.tot, want, parts: T.likely + T.check + T.no}}; }}""")
+        check('Tax: a psychologist (not a doctor, no referral) is “probably not”; a psychiatrist “likely”; hearing aid batteries “likely”; medicines “check” (only with a prescription)', H['psy'] and H['psy']['st'] == 'no' and H['doc']['st'] == 'likely' and H['hear']['st'] == 'likely' and H['med']['st'] == 'check' and H['med']['r'] == 'meds', H)
+        check('Tax: the Wise fee is left out of a health bill paid through Wise', H['psy'] and abs(H['psy']['amt'] - 98) < .01 and abs(H['psy']['fee'] - 2) < .01, H['psy'])
+        check('Tax: only Health purchases and Health bills of that year count, and the three groups add up to the total', not H['groc'] and not H['old'] and not H['oldPsy'] and abs(H['tot'] - H['want']) < .01 and abs(H['parts'] - H['tot']) < .01, H)
+        L = ev(f"""() => {{ render(); const sec = [...document.querySelectorAll('#view .ios-sec')].find(x => x.querySelector('h2').textContent.startsWith('Health')), T = taxYear({y});
+            const groups = [...sec.querySelectorAll('.ios-list > details')].map(d => ({{name: d.querySelector('summary .txt').firstChild.textContent, dot: d.querySelector('summary .dot').className, items: d.querySelectorAll('.taxitem').length, end: d.querySelector('summary .end').textContent}}));
+            const want = ['likely', 'check', 'no'].filter(k => T.health.some(x => x.st === k)).map(k => ({{name: TAX_ST[k][1], dot: 'dot ' + TAX_ST[k][0], items: T.health.filter(x => x.st === k).length, end: money(T.health.filter(x => x.st === k).reduce((v, x) => v + x.amt, 0))}}));
+            return {{groups, want}}; }}""")
+        check('Tax: the health expenses are grouped by what Revenue’s rules say (likely, to check, probably not), each group one tidy row with its total and its expenses inside', L['groups'] == L['want'] and len(L['groups']) == 3, L)
+        R = ev("""() => { const F = fact('taxYear'), links = [...document.querySelectorAll('#view a[href]')].map(a => new URL(a.href).hostname);
+            const ok = h => ['revenue.ie', 'citizensinformation.ie', 'gov.ie'].some(x => h === x || h.endsWith('.' + x));
+            S._hc = null; const clean = selfCheck().items.filter(x => x.area === 'Tax summary').length;
+            S.facts = {...S.facts, taxYear: {...F, rules: F.rules.concat([{id: 'kit', t: 'Kit rule', url: 'https://en.wikipedia.org/wiki/Tax'}])}}; S._hc = null; const flagged = selfCheck().items.filter(x => x.area === 'Tax summary').length;
+            S.facts = {...S.facts, taxYear: F}; S._hc = null;
+            return {n: F.rules.length, links: links.length, bad: links.filter(h => !ok(h)), clean, flagged}; }""")
+        check('Tax: every rule is shown with its source, every link is official (revenue.ie, citizensinformation.ie, gov.ie), and the self-check flags a rule that isn’t', R['n'] >= 10 and R['links'] >= R['n'] and not R['bad'] and R['clean'] == 0 and R['flagged'] == 1, R)
+        Rr = ev("() => { const ws = weekStartOf(today()), h = reportFull(ws, reportData(ws)); return /Preliminary End of Year|at a glance|Tax summary|Employment Detail/.test(h); }")
+        check('Tax: Rory’s report doesn’t change (no tax summary in it)', not Rr)
+        check('Tax: opening the summary writes nothing (no History line, nothing saved)', ev("() => S.changelog.length") == n0)
+        for wd in (375, 430):
+            for dark in (False, True):
+                pg.set_viewport_size({'width': wd, 'height': 900}); pg.emulate_media(color_scheme='dark' if dark else 'light')
+                ev("() => { S.tab = 'money'; S.sub.money = 'tax'; render(); document.querySelectorAll('#view details').forEach(d => d.open = true); }"); w(200)
+                f = ev(PROBE); check(f'Tax: fits the phone with every fold open ({wd} px, {"dark" if dark else "light"})', not f, f[:6])
+        pg.set_viewport_size({'width': 390, 'height': 900}); pg.emulate_media(color_scheme='light')
+    step('tax', f_tax)
     step('ahead', f_ahead)
     br.close()
 
