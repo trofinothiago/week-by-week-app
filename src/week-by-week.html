@@ -785,6 +785,7 @@ body.sheet-open{overflow:hidden}
 /* lists that only grow: one short line per entry (like Pay's "Done this week"), each week folded */
 .elist{display:grid;gap:4px}
 .eweek>summary{font-size:.95rem}
+.eweek .eweek{margin-left:16px}
 .eline{border-bottom:1px dashed var(--rule)}
 .eline>summary{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:7px 0;font:400 .92rem var(--f-body);list-style:none}
 .eline>summary::-webkit-details-marker{display:none}
@@ -1590,9 +1591,10 @@ function trendSummary(td){
 const sigChip = s => `<span class="chip ${s}">${s === 'ok' ? '✓ Good' : s === 'warn' ? '! Watch' : s === 'bad' ? '✕ Act' : '… Waiting'}</span>`;
 const sigRows = list => list.length ? `<div class="sigs">${list.map(x => `<div class="sig">${sigChip(x.st)}<div><b>${esc(x.name)}</b> <span class="mono">${esc(x.val)}</span><p class="mut">${esc(x.text)}</p></div></div>`).join('')}</div>` : '';   // the trend's signals, one row each
 function checksList(){   // every money check, newest first, with whether it added up and Delete (Week, step 2)
-  const chks = sortedChecks();
-  return chks.length ? `<details><summary>Every money check (${chks.length})</summary><div class="tablewrap mt10"><table><thead><tr><th>Date</th><th class="r">Joint</th><th class="r">Bills Pocket</th><th class="r">Vaults</th><th class="r">Emergency</th><th class="r">AIB savings</th><th class="r">Card owes</th><th class="r">Net</th><th>Adds up?</th><th></th></tr></thead><tbody>
-    ${chks.slice().reverse().map(c => `<tr><td class="num">${dshort(pd(c.date))}</td>${['joint', 'bills', 'vaults', 'ef', 'aib', 'card'].map(k => `<td class="r num">${has(c[k]) ? money(c[k]) : '—'}</td>`).join('')}<td class="r num"><b>${money(checkNet(c))}</b></td><td>${(() => { const r = recFor(c); if (!r) return '<span class="mut">—</span>'; const x = recState(r); return `<span class="chip ${x}">${x === 'ok' ? '✓ Yes' : x === 'warn' ? `${money(Math.abs(r.gap))} explained` : `✕ ${r.gap < 0 ? '−' : '+'}${money(Math.abs(r.gap))}`}</span>`; })()}</td><td>${S.canWrite ? `<button class="btn small danger" data-act="chkDel" data-id="${esc(c.id)}">Delete</button>` : ''}</td></tr>`).join('')}</tbody></table></div></details>` : '';
+  const chks = sortedChecks(), N = {joint: 'Joint', bills: 'Bills Pocket', vaults: 'Vaults', ef: 'Emergency fund', aib: 'AIB savings', card: 'Card owes'};
+  const adds = c => { const r = recFor(c); if (!r) return ''; const x = recState(r); return ` <span class="chip ${x}">${x === 'ok' ? '✓ adds up' : x === 'warn' ? `${money(Math.abs(r.gap))} explained` : `✕ ${r.gap < 0 ? '−' : '+'}${money(Math.abs(r.gap))}`}</span>`; };
+  return chks.length ? `<details><summary>Every money check (${chks.length})</summary><div class="mt10">${entryWeeks('checks', chks.slice().reverse().map(c => ({id: c.id, d: pd(c.date), what: `Net${adds(c)}`, amt: money(checkNet(c)),
+    body: `<div class="kv">${Object.entries(N).map(([k, n]) => `<span>${n}</span><span>${has(c[k]) ? money(c[k]) : '—'}</span>`).join('')}</div>${S.canWrite ? `<button class="btn small danger" data-act="chkDel" data-id="${esc(c.id)}">Delete</button>` : ''}`})))}</div></details>` : '';
 }
 async function chkSave(){
   const f = S.f.chk, r2 = v => Math.round(num(v) * 100) / 100;
@@ -2010,12 +2012,16 @@ function dueMoves(from, days){
   }
   return out.sort((x, y) => x.sendBy - y.sendBy);
 }
-function entryWeeks(list, rows){   // a list that only grows (purchases, the card log, moves, readings, History): one short line per entry like Pay's "Done this week", a tap opens its detail and Delete; this week open, each older week folded with its count (and total when rows carry sum)
-  const by = {}, now = iso(weekStartOf(today())), open = (k, d) => (S.eOpen || {})[k] ?? d;
-  for (const r of rows) if (r.d) (by[iso(weekStartOf(r.d))] ||= []).push(r);
-  return `<div class="elist">${Object.keys(by).sort().reverse().map(k => { const arr = by[k], tot = arr.reduce((t, r) => t + (r.sum || 0), 0), wk = `${list}:${k}`;
-    return `<details class="eweek" data-fold="${wk}"${open(wk, k === now) ? ' open' : ''}><summary>${weekLabel(pd(k))} <span class="mut fw4">· ${arr.length}${arr.some(r => r.sum != null) ? ` · ${money(tot)}` : ''}</span></summary>${arr.map(r => { const ek = `${list}:${r.id}`;
-      return `<details class="eline" data-fold="${ek}"${open(ek, false) ? ' open' : ''}><summary><span>${dshort(r.d)} · ${r.what}</span><span class="mono">${r.amt || ''}</span></summary><div class="ebody">${r.body}</div></details>`; }).join('')}</details>`; }).join('')}</div>`;
+function entryWeeks(list, rows){   // a list that only grows (purchases, the card log, moves, readings, money checks, Wise, History): one short line per entry like Pay's "Done this week", a tap opens its detail and Delete. This month by week (this week open); each earlier month of this year folded into one line; each earlier year folded into one line with its months inside. Every fold shows its count (and total when rows carry sum)
+  const t = today(), now = iso(weekStartOf(t)), cut = weekStartOf(monthStart(t)), y0 = t.getFullYear(), open = (k, d) => (S.eOpen || {})[k] ?? d;
+  const group = (arr, key) => { const by = {}; for (const r of arr) (by[key(r)] ||= []).push(r); return Object.keys(by).sort().reverse().map(k => [k, by[k]]); };
+  const lines = arr => arr.map(r => { const ek = `${list}:${r.id}`;
+    return `<details class="eline" data-fold="${ek}"${open(ek, false) ? ' open' : ''}><summary><span>${dshort(r.d)} · ${r.what}</span><span class="mono">${r.amt || ''}</span></summary><div class="ebody">${r.body}</div></details>`; }).join('');
+  const fold = (k, label, arr, inner, dflt) => { const wk = `${list}:${k}`, tot = arr.reduce((a, r) => a + (r.sum || 0), 0);
+    return `<details class="eweek" data-fold="${wk}"${open(wk, dflt) ? ' open' : ''}><summary>${label} <span class="mut fw4">· ${arr.length}${arr.some(r => r.sum != null) ? ` · ${money(tot)}` : ''}</span></summary>${inner}</details>`; };
+  const months = arr => group(arr, r => iso(r.d).slice(0, 7)).map(([k, a]) => fold(k, fMon.format(pd(`${k}-01`)), a, lines(a), false)).join('');
+  const dated = rows.filter(r => r.d), older = dated.filter(r => r.d < cut);
+  return `<div class="elist" data-list="${list}">${group(dated.filter(r => r.d >= cut), r => iso(weekStartOf(r.d))).map(([k, a]) => fold(k, weekLabel(pd(k)), a, lines(a), k === now)).join('')}${months(older.filter(r => r.d.getFullYear() === y0))}${group(older.filter(r => r.d.getFullYear() < y0), r => String(r.d.getFullYear())).map(([k, a]) => fold(k, k, a, months(a), false)).join('')}</div>`;
 }
 function foldQuiet(busy, open, line, html){   // a card with nothing running or due folds to one line; tapping it opens the same card in place
   return busy ? html : `<section class="panel"><details${open ? ' open' : ''}><summary>${line}</summary><div class="nest">${html}</div></details></section>`;
@@ -2054,9 +2060,8 @@ function vWise(){
     ${warns.map(w => `<div class="banner">${esc(w)}</div>`).join('')}
     ${unl.map(w => `<div class="banner"><b>${esc(w.purpose || 'This transfer')} isn’t a bill yet</b>, so nothing is being saved for the next transfer. Add it as a bill: the Vault then saves for it every week, Pay shows the next transfer 3 days before it’s due, and this transfer (${dshort(pd(w.date))}, ${money(w.eur)}) goes into its history.${S.canWrite ? `<div class="actions"><button class="btn strong" data-act="wiseToBill" data-id="${esc(w.id)}">Add it as a bill</button></div>` : ''}</div>`).join('')}
     ${form}${errLine(S.errAt === 'wise')}
-    ${list.length ? `<div class="tablewrap"><table><thead><tr><th>Date</th><th>What for</th><th class="r">Sent</th><th class="r">Wise fee</th><th class="r">Received</th><th class="r">Rate</th><th></th></tr></thead><tbody>
-      ${list.map(w => { const net = num(w.eur) - num(w.fee); return `<tr><td class="num">${dshort(pd(w.date))}</td><td>${esc(w.purpose || '')}</td><td class="r num">${money(w.eur)}</td><td class="r num">${w.fee ? money(w.fee) : '—'}</td><td class="r num">${w.brl ? reais(w.brl) : '—'}</td><td class="r num">${w.brl && net > 0 ? `R$ ${(num(w.brl) / net).toFixed(3)}` : '—'}</td><td>${S.canWrite ? `<button class="btn small danger" data-act="wiseDel" data-id="${esc(w.id)}">Delete</button>` : ''}</td></tr>`; }).join('')}
-      </tbody></table></div><p class="mut fs85">Rate is reais received for each euro after the Wise fee. Fees so far: ${money(list.reduce((a, w) => a + num(w.fee), 0))}.</p>` : '<p class="mut">No transfers logged yet.</p>'}
+    ${list.length ? `${entryWeeks('wise', list.map(w => { const net = num(w.eur) - num(w.fee); return {id: w.id, d: pd(w.date), what: esc(w.purpose || 'Transfer'), amt: money(w.eur), sum: num(w.eur),
+      body: `<div class="kv"><span>Wise fee</span><span>${w.fee ? money(w.fee) : '—'}</span><span>Received</span><span>${w.brl ? reais(w.brl) : '—'}</span><span>Rate</span><span>${w.brl && net > 0 ? `R$ ${(num(w.brl) / net).toFixed(3)}` : '—'}</span></div>${S.canWrite ? `<button class="btn small danger" data-act="wiseDel" data-id="${esc(w.id)}">Delete</button>` : ''}`}; }))}<p class="mut fs85">Rate is reais received for each euro after the Wise fee. Fees so far: ${money(list.reduce((a, w) => a + num(w.fee), 0))}.</p>` : '<p class="mut">No transfers logged yet.</p>'}
   </section>`);
 }
 /* ---------- moving money between our accounts, by hand ---------- */
@@ -5498,7 +5503,7 @@ function cardIntPanel(){
 }
 
 /* ---------- system health: the page checks itself every time it opens; Claude runs the full check every Monday ---------- */
-const APP_VERSION = '2026.11.13';
+const APP_VERSION = '2026.11.13-2';
 function selfCheck(){   // cheap checks on the data, run on every open: things that don't fit, and the weekly tasks that should have run
   const key = `${S._rt}|${iso(today())}`; if (S._hc && S._hc.k === key) return S._hc.v;
   const items = [], t = today(), add = (st2, area, txt) => items.push({st: st2, area, t: txt});

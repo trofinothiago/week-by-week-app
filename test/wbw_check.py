@@ -400,15 +400,28 @@ with sync_playwright() as p:
     # ---- 5b. lists that only grow: one short line per entry, this week open, older weeks folded, and what was opened stays open ----
     def f_lists():
         load(NOW)
-        for tab, sub, name in [('money', 'spending', 'purchases'), ('money', 'debts', 'card log'), ('money', 'transfers', 'moves'), ('money', 'energy', 'readings'), ('settings', 'history', 'History')]:
-            ev(f"() => {{ S.eOpen = {{}}; S.tab = '{tab}'; S.sub.{tab} = '{sub}'; render(); }}")
-            r = ev("""() => { const L = document.querySelector('#view .elist'); if (!L) return null; const now = iso(weekStartOf(today()));
+        for tab, sub, name, key in [('money', 'spending', 'purchases', 'buys'), ('money', 'debts', 'card log', 'card'), ('money', 'transfers', 'moves', 'moves'), ('money', 'transfers', 'transfers to Brazil', 'wise'), ('money', 'energy', 'readings', 'reads'), ('week', 'week', 'money checks', 'checks'), ('settings', 'history', 'History', 'hist')]:
+            ev(f"() => {{ S.eOpen = {{}}; S.tab = '{tab}'; S.sub.{tab} = '{sub}'; render(); window.__elist = '{key}'; }}")
+            r = ev("""() => { const L = document.querySelector(`#view .elist[data-list="${window.__elist}"]`); if (!L) return null; const now = iso(weekStartOf(today()));
                 const weeks = [...L.querySelectorAll('.eweek')], line = L.querySelector('.eline');
                 const r = {weeks: weeks.length, lines: L.querySelectorAll('.eline').length, wrong: weeks.filter(d => d.open !== d.dataset.fold.endsWith(':' + now)).map(d => d.dataset.fold), table: !!L.closest('section').querySelector('table')};
                 if (line) { line.open = true; line.dispatchEvent(new Event('toggle')); render(); r.kept = !!document.querySelector(`#view .eline[data-fold="${line.dataset.fold}"]`)?.open; }
                 return r; }""")
             if r is None: notes[f'list {name}'] = 'nothing logged'; continue
             check(f"{name}: one short line per entry, this week open, older weeks folded, a line opened stays open", r['lines'] and not r['wrong'] and not r['table'] and r.get('kept', True), r)
+        # the folds by month and year: the kit makes its own entries and states the rule itself
+        r = ev("""() => { const t = today(), y = t.getFullYear(), ws = weekStartOf(t), cut = weekStartOf(monthStart(t)), d = (Y, M, D) => new Date(Y, M, D);
+            const days = [t, addDays(cut, 1), d(y, 0, 15), d(y - 1, 11, 10), d(y - 1, 2, 3), d(y - 3, 5, 20)].filter((x, i) => i < 2 || x < cut);
+            const rows = days.map((x, i) => ({id: 'k' + i, d: x, what: 'kit', amt: '€1.00', sum: 1, body: 'kit'}));
+            S.eOpen = {}; const box = document.createElement('div'); box.innerHTML = entryWeeks('kit', rows); const L = box.firstElementChild, top = [...L.children];
+            const want = []; const wk = new Set(days.filter(x => x >= cut).map(x => iso(weekStartOf(x)))); [...wk].sort().reverse().forEach(k => want.push(k));
+            const mo = new Set(days.filter(x => x < cut && x.getFullYear() === y).map(x => iso(x).slice(0, 7))); [...mo].sort().reverse().forEach(k => want.push(k));
+            const yr = new Set(days.filter(x => x < cut && x.getFullYear() < y).map(x => String(x.getFullYear()))); [...yr].sort().reverse().forEach(k => want.push(k));
+            const got = top.map(x => x.dataset.fold.slice(4)), opened = top.filter(x => x.open).map(x => x.dataset.fold.slice(4));
+            const inYears = top.filter(x => /^kit:\\d{4}$/.test(x.dataset.fold)).map(x => [...x.children].filter(c => c.classList.contains('eweek')).map(c => c.dataset.fold.slice(4)));
+            const counts = top.map(x => x.querySelectorAll('.eline').length).reduce((a, b) => a + b, 0);
+            return {got, want, opened, now: iso(ws), inYears, counts, n: rows.length}; }""")
+        check("lists that only grow: this month by week (this week open), each earlier month of this year one folded line, each earlier year one folded line with its months inside, nothing lost", r['got'] == r['want'] and r['opened'] == [r['now']] and all(len(m) >= 1 and all(len(k) == 7 for k in m) for m in r['inYears']) and r['counts'] == r['n'], r)
     step('lists', f_lists)
 
     # ---- 5c. Today: where we're heading (the kit states the rules itself) ----
