@@ -256,9 +256,10 @@ with sync_playwright() as p:
         S.bills = bl; S.f.chk = {date: iso(today())}; render(); return r; }""")
     check('Money check: a bill charged to the card in the last 7 days (Claude) can be ticked as still pending, and counts in what we really owe', cb.get('listed') and cb.get('shown') and abs(cb.get('owed', 0) - 1022.14) < .005, cb)
     jt = ev("""() => { S.tab = 'today'; S.todayOpen = ''; render(); const J = jointShow(weekStartOf(today())), w = jointWait(J), tileT = [...document.querySelectorAll('.ios-tile')][0].innerText;
-        const r = {wait: w, tile: tileT.replace(/\s+/g, ' ')}; r.ok = w ? tileT.includes('In the Joint now') && tileT.includes(money(J.now)) && tileT.includes(money(J.plan)) && /after payday/.test(tileT) && !tileT.includes(money(J.v)) || Math.abs(J.v - J.now) < .005 : !tileT.includes('In the Joint now');
-        S.canWrite = false; S.tab = 'week'; render(); const rv = document.getElementById('view').innerText; r.rory = w ? /in the joint now/i.test(rv) && /after payday/i.test(rv) : !/in the joint now/i.test(rv); S.canWrite = true; render(); return r; }""")
-    check('Joint tile: before payday it shows what is really in the Joint now and what will be free after payday (never a made-up negative), on Today and in Rory’s report', jt['ok'] and jt['rory'], jt)
+        const r = {wait: w, tile: tileT.replace(/\s+/g, ' '), now: J.now, still: J.still, v: J.v}, real = J.now != null, free = v => v < -.005 ? money(-v) + ' short' : money(v) + ' free';
+        r.ok = !real ? !tileT.includes('In the Joint now') : tileT.includes('In the Joint now') && tileT.includes(money(J.now)) && (w ? tileT.includes(money(J.after)) && /after payday/.test(tileT) : J.still > .005 ? tileT.includes(free(J.v) + ' after ' + money(J.still) + ' for the shop') : tileT.includes(free(J.v)));
+        S.canWrite = false; S.tab = 'week'; render(); const rv = document.getElementById('view').innerText; r.rory = !real || (/in the joint now/i.test(rv) && rv.includes(m0(J.now)) && (w ? /after payday/i.test(rv) : J.still > .005 ? /for the shop/.test(rv) : true)); S.canWrite = true; render(); return r; }""")
+    check('Joint tile: always the money really in the Joint now; before payday what will be free after it, after payday what the shop still needs and what is free (or short), on Today and in Rory’s report', jt['ok'] and jt['rory'], jt)
     check('System (cleaner): the self-check stays; Claude’s check is one line with the detail folded; only ideas waiting show, keeping their number; What’s new folded', sy['one'] and sy['three'] and not sy['built'] and sy['rowHidden'] and sy['newsFolded'] and sy['selfCheck'] and sy['noIdeas'], sy)
     ev("() => render()")
     ev("() => { S.canWrite = false; render(); }"); rv = view()
@@ -386,6 +387,14 @@ with sync_playwright() as p:
                 return {left, need: Math.round(Math.max(0, L - bought) * 100) / 100, free: freeLeft(ws), want: Math.round(want * 100) / 100}; }""")
             if r is None: notes['freeMoney'] = 'the shop is not learned yet'; return
             check(f"free money {label}: what's left less {'nothing' if label == 'on Sunday' else 'all the shop, cigarettes and drinks still need'}", abs(r['free'] - r['want']) < .02, r)
+            j = ev("""() => { const ws = weekStartOf(today()), z = addDays(ws, 6), L = essentialsLearned().amount, s0 = jointStart(); if (!s0.known) return null;
+                const bought = S.spending.filter(x => x.paidFrom === 'joint' && ESS_CATS.includes(x.cat) && pd(x.date) >= ws && pd(x.date) <= z).reduce((t, x) => t + num(x.amount), 0), need = iso(today()) === iso(z) ? 0 : Math.max(0, L - bought);
+                const tr = (S.weeks[iso(ws)] || {}).transfers || {}; let pin = 0, pout = 0;
+                for (const x of stepsFor(ws)) if (x.amount != null && !tr[x.id]){ if (STEP_IN[x.id]) pin += x.amount; else if (x.fc === 'joint') pout += x.amount; }
+                for (const x of accOut('joint', addDays(today(), 1), z)) pout += x.amt;
+                const r2 = v => Math.round(v * 100) / 100, J = jointShow(ws);
+                return {real: s0.v, need: r2(need), pin, pout, v: J.v, after: J.after, wantV: r2(Math.min(s0.v, s0.v + pin - pout) - need), wantAfter: r2(s0.v + pin - pout - need)}; }""")
+            if j: check(f"Joint tile {label}: free money starts from the money really in the Joint (what was there on Monday included), never from the week's plan alone", abs(j['v'] - j['wantV']) < .02 and abs(j['after'] - j['wantAfter']) < .02, j)
     step('free money', f_free)
 
     # ---- 5b. lists that only grow: one short line per entry, this week open, older weeks folded, and what was opened stays open ----
