@@ -846,6 +846,43 @@ with sync_playwright() as p:
         check('Paid early: Undo takes it back (the Bills Pocket and the due day as before)', abs(num("pocketStart().v") - p0) < .01 and ev(f"() => payEarlyList().some(x => x.key === '{it['key']}')"))
     step('paid early', f_early)
 
+    # ---- 9e. when a bill is charged (14 Nov 2026, asked by Thiago): App Store and card charges go on their day, direct debits only on working days, some by hand; the app learns it from Pay ----
+    def f_charge():
+        load(NOW)
+        if not ev("() => typeof billLeaves === 'function'"): notes['charge'] = 'no charge days in this version'; return
+        R = ev("""() => { const sat = d => { let x = addDays(d, 0); while (x.getDay() !== 6) x = addDays(x, -1); return x; }, s1 = sat(addDays(today(), -1)), mon = nextWorkingDay(s1);
+            const mk = (charge, manual) => ({name: 'Kit charge', amount: 10, freq: 'ndays', everyDays: 28, anchor: iso(s1), account: 'bills', kind: 'debit', active: true, ...(charge ? {charge} : {}), ...(manual ? {manual: true} : {})});
+            const days = b => billDays(b, s1, addDays(s1, 4)).map(o => iso(o.d));
+            return {sat: iso(s1), mon: iso(mon), work: days(mk('work')), any: days(mk('any')), none: days(mk('')), hand: days(mk('work', true)),
+              xmas: iso(billLeaves(mk('work'), new Date(2026, 11, 25))), stephen: iso(billLeaves(mk('work'), new Date(2026, 11, 26))), weekday: iso(billLeaves(mk('work'), new Date(2026, 11, 23)))}; }""")
+        check('When it’s charged: a working-days bill due on a weekend leaves the next working day (Christmas and St Stephen’s Day: Tue 29 Dec); an any-day bill, one not known yet and one paid by hand stay on their day', R['work'] == [R['mon']] and R['any'] == [R['sat']] and R['none'] == [R['sat']] and R['hand'] == [R['sat']] and R['xmas'] == R['stephen'] == '2026-12-29' and R['weekday'] == '2026-12-23', R)
+        # a real bill in the store: Pay, the Bills Pocket and the one-tap buttons, then the app learns it
+        ev(f"""async () => {{ await S.db.doc('bills/kitcharge').set({{name: 'Kit charge', amount: 10, freq: 'ndays', everyDays: 28, anchor: '{R['sat']}', account: 'bills', kind: 'debit', active: true, charge: 'work', cat: 'Other', history: [], createdAt: new Date().toISOString()}}); }}"""); w(600)
+        P = ev(f"""() => {{ const it = payNow().find(x => x.b && x.b.id === 'kitcharge' && iso(x.d) === '{R['sat']}'); const out = accOut('bills', pd('{R['sat']}'), addDays(pd('{R['sat']}'), 4)).filter(o => o.id === 'kitcharge').map(o => iso(o.d));
+            S.tab = 'pay'; render(); const btns = [...document.querySelectorAll('#view button[data-act=ppQuick]')].filter(x => x.dataset.k.includes('kitcharge')).map(x => x.textContent);
+            const wk = billsInRange(pd('{R['sat']}'), addDays(pd('{R['sat']}'), 4)).filter(i => i.b && i.b.id === 'kitcharge').map(i => [iso(i.d), itemAmt(i)]);
+            return {{on: it ? iso(it.on) : null, out, btns, wk}}; }}""")
+        pf = [x for x in ev(PROBE) if 'Kit charge' in x or 'Left' in x]
+        mon_in = 0 <= (NOW.date() - datetime.date.fromisoformat(R['mon'])).days <= 2   # a direct debit shows in Pay from its day for 3 days
+        check('When it’s charged: Pay, the Bills Pocket and “going out” expect it on the next working day, and Pay asks the day it left with one tap (fits the phone)', P['on'] == (R['mon'] if mon_in else None) and P['out'] == [R['mon']] and P['wk'] == [[R['mon'], 10]] and (not mon_in or (len(P['btns']) >= 2 and any('Left' in b for b in P['btns']))) and not pf, [P, pf[:3]])
+        # two weekend payments in a row that left on their day teach the bill: it becomes an any-day bill, with one History line
+        L = ev(f"""async () => {{ const s1 = pd('{R['sat']}'), s0 = addDays(s1, -28);
+            await ppSave('b:kitcharge:' + iso(s0), true, iso(s0)); const b1 = S.bills.find(x => x.id === 'kitcharge'), c1 = b1.charge;
+            await ppSave('b:kitcharge:' + iso(s1), true, iso(s1)); const b2 = S.bills.find(x => x.id === 'kitcharge');
+            return {{c1, c2: b2.charge, left: (b2.history || []).map(h => [h.due, h.date, h.left]), log: S.changelog.filter(x => /Kit charge: learned/.test(x.text || '')).map(x => [x.text, x.tell]),
+              next: billDays(b2, addDays(s1, 28), addDays(s1, 32)).map(o => iso(o.d)), want: iso(addDays(s1, 28))}}; }}"""); w(400)
+        check('When it’s charged: two weekend payments in a row that left on their day make it an any-day bill (one History line, nobody told), and the next one is expected on its day', L['c1'] == 'work' and L['c2'] == 'any' and all(h[2] == 'due' for h in L['left']) and len(L['log']) == 1 and not L['log'][0][1] and L['next'] == [L['want']], L)
+        # the bill form: "When it's charged", with "I pay it by hand" as one of its choices
+        ev("() => { S.tab = 'money'; S.sub.money = 'bills'; render(); }"); act('billEdit', id='kitcharge'); w(300)
+        F = ev("() => { const x = document.getElementById('f_bill_charge'); return x ? {opts: [...x.options].map(o => o.value), v: x.value, manualBox: !!document.getElementById('f_bill_manual')} : null; }")
+        pf = ev(PROBE)
+        check('When it’s charged: the bill form has the choice (any day, working days only, by hand, not sure yet), the old “paid by hand” box is gone, and it fits the phone', F and F['opts'] == ['', 'any', 'work', 'hand'] and F['v'] == 'any' and not F['manualBox'] and not pf, [F, pf[:3]])
+        ev("() => { S.f.bill.charge = 'hand'; }"); act('billSave'); w(500)
+        H = ev("() => { const b = S.bills.find(x => x.id === 'kitcharge'); return {manual: !!b.manual, charge: b.charge || null, auto: autoBill(b)}; }")
+        check('When it’s charged: “I pay it by hand” makes it a bill paid by hand (Pay waits for it until it’s logged)', H['manual'] and not H['auto'] and not H['charge'], H)
+        ev("async () => { await S.db.doc('bills/kitcharge').delete(); }"); w(300)
+    step('charge days', f_charge)
+
     # ---- 9c. the AIB card as the bank has it: real interest from the statement, and what's still pending ----
     def f_card():
         load(NOW)

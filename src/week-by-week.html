@@ -1064,6 +1064,19 @@ function holidaysFor(y){   // {iso: name}: public holidays, Good Friday, and the
 const holidayOn = d => d ? holidaysFor(d.getFullYear())[iso(d)] || null : null;
 const bankClosed = d => d.getDay() === 0 || d.getDay() === 6 || !!holidayOn(d);
 function prevWorkingDay(d){ let x = addDays(d, -1); while (bankClosed(x)) x = addDays(x, -1); return x; }
+function nextWorkingDay(d){ let x = addDays(d, 1); while (bankClosed(x)) x = addDays(x, 1); return x; }
+/* when a bill is charged (14 Nov 2026, asked by Thiago): App Store and card charges go on their day, weekends too; direct debits only on working days, so a weekend or bank holiday moves them to the next one; some we pay by hand */
+const CHARGE = {any: 'Any day, weekends too', work: 'Working days only', hand: 'I pay it by hand'};
+const billLeaves = (b, due) => b.charge === 'work' && !b.manual && bankClosed(due) ? nextWorkingDay(due) : due;   // the day its money is expected to leave; not known yet: its due day, the earliest it can go
+const chargeLeft = (b, due, date) => !autoBill(b) || !bankClosed(due) ? null : date === iso(due) ? 'due' : date === iso(nextWorkingDay(due)) ? 'next' : null;   // a weekend or bank holiday payment confirmed in Pay: did it leave on its day, or the next working day?
+function chargeLearned(b, hist){   // two such payments in a row that left the same way teach the bill when it's charged
+  if (b.manual) return null;
+  const L = hist.filter(x => x.left).sort((p, q) => (p.due || p.date).localeCompare(q.due || q.date)).slice(-2);
+  if (L.length < 2 || L[0].left !== L[1].left) return null;
+  const want = L[1].left === 'due' ? 'any' : 'work';
+  return (b.charge || '') === want ? null : want;
+}
+const chargeLog = (b, want) => logChange('bill', `${b.name}: learned from its last 2 weekend or bank holiday payments that it’s charged ${want === 'any' ? 'on its day, weekends too' : 'on working days only (a weekend or bank holiday moves it to the next working day)'}`, {tell: ''});
 function nextHolidays(from, days){ const out = []; for (let d = from; d <= addDays(from, days); d = addDays(d, 1)){ const n = holidayOn(d); if (n) out.push({d, n}); } return out; }
 const INC_TYPE = {welfare: 'Social welfare payment', salary: 'Salary from work', other: 'Other income'};
 const WHO_INC = {rory: {name: 'Rory', day: 'paydayRory', type: 'typeRory', def: 'salary', freq: 'freqRory', anchor: 'anchorRory', mday: 'mdayRory', inc: 'incomeRory', keep: 'keepRory'}, thiago: {name: 'Thiago', day: 'paydayThiago', type: 'typeThiago', def: 'welfare', freq: 'freqThiago', anchor: 'anchorThiago', mday: 'mdayThiago', inc: 'incomeThiago', keep: 'keepThiago'}};
@@ -1138,7 +1151,7 @@ function loanInst(l){
   if (!first || !(amt > 0)) return [];
   const t = today(), out = [];
   for (let i = 0; i < n; i++){
-    const d = l.every === 'week' ? addDays(first, 7 * i) : l.every === '2w' ? addDays(first, 14 * i) : addMonthsClamp(first, i);
+    const d = billLeaves(l, l.every === 'week' ? addDays(first, 7 * i) : l.every === '2w' ? addDays(first, 14 * i) : addMonthsClamp(first, i));   // a direct debit (charge: work) waits for a working day
     const a = i === n - 1 && num(l.lastAmount) > 0 ? num(l.lastAmount) : amt;
     out.push({i: i + 1, n, d, amount: a, paid: d <= t, l});
   }
@@ -1347,7 +1360,7 @@ function streak(){
 const keptByNo = () => S.wishlist.filter(w => w.status === 'dropped').reduce((a, w) => a + num(w.price), 0);
 function billsInRange(a, z){
   const out = [];
-  for (const b of billsTimeline()) for (const d of occurrences(b, a, z)) out.push({d, b});
+  for (const b of billsTimeline()) for (const o of billDays(b, a, z)) out.push({d: o.d, b, bd: o.due});   // the day its money leaves; bd: its due day
   for (const e of S.cardlog) if (e.type === 'scheduled'){ const d = pd(e.date); if (d && d >= a && d <= z) out.push({d, card: e}); }
   for (const k of S.klarna.flatMap(klarnaInst)) if (k.d >= a && k.d <= z) out.push({d: k.d, kl: k});
   for (const k of S.loans.flatMap(loanInst)) if (k.d >= a && k.d <= z) out.push({d: k.d, ln: k});
@@ -1355,9 +1368,9 @@ function billsInRange(a, z){
   return out.sort((x, y) => x.d - y.d);
 }
 function vaultBills(){ return activeBills().filter(b => b.vault); }
-const itemAmt = it => it.due ? 0 : it.kl ? it.kl.amount : it.ln ? it.ln.amount : it.card ? num(it.card.amount) : occAmount(it.b, it.d);
-const itemPaid = it => !!(it && it.b && it.d && histAt(it.b, it.d));   // a bill already confirmed in Pay for that date
-const itemName = it => it.due ? 'AIB card payment due' : it.kl ? klarnaLabel(it.kl) : it.ln ? loanLabel(it.ln) : it.card ? (it.card.note || 'card charge') : occName(it.b, it.d);
+const itemAmt = it => it.due ? 0 : it.kl ? it.kl.amount : it.ln ? it.ln.amount : it.card ? num(it.card.amount) : occAmount(it.b, it.bd);
+const itemPaid = it => !!(it && it.b && it.bd && histAt(it.b, it.bd));   // a bill already confirmed in Pay for that date
+const itemName = it => it.due ? 'AIB card payment due' : it.kl ? klarnaLabel(it.kl) : it.ln ? loanLabel(it.ln) : it.card ? (it.card.note || 'card charge') : occName(it.b, it.bd);
 function periodWeeks(b){ const m = FREQ[b.freq]?.m; if (m) return m * 52 / 12; if (b.freq === 'weekly') return 1; if (b.freq === 'ndays') return Math.max(1, num(b.everyDays)) / 7; return 52 / 12; }
 function vaultIn(b, afterStamp, beforeDay){   // confirmed money into this bill's part of the Vaults: ticked transfers, at their real amounts
   const until = iso(today()), eachId = 'vault-' + b.id; let t = 0;
@@ -2343,6 +2356,7 @@ function billForm(){
       ${isM ? field('bill', 'dueDay', 'Day of the month', {money:true, ph:'1'}) : field('bill', 'anchor', isI ? 'First payment date' : fq === 'annual' ? 'Next date it is charged' : fq === 'weekly' || fq === 'ndays' ? 'A date it was or will be charged' : 'Next date it is charged', {type:'date'})}
       ${field('bill', 'account', 'Paid from', {select: [['bills','Bills Pocket (in the Joint account)'],['joint','Joint account (day to day)'],['card','Charged to the AIB credit card'],['rory',"Rory's personal account"],['thiago',"Thiago's personal account"],['nubank','Nubank (Brazil), sent via Wise']]})}
       ${billChangeBox(b, isM)}
+      ${field('bill', 'charge', 'When it’s charged', {select: [['', 'Not sure yet: the app learns it'], ...Object.entries(CHARGE)], hint: 'App Store and card charges go any day. A direct debit waits for a working day after a weekend or bank holiday. The app learns it from the payments you confirm in Pay.'})}
       ${b.account === 'nubank' ? field('bill', 'brlAmount', 'Amount in reais (R$)', {money:true, ph:'900', hint:'What the bill costs in Brazil'}) : ''}
       ${field('bill', 'cat', 'Category', {select: [['auto', `Automatic${autoCat(b.name) ? ` (${autoCat(b.name)})` : ''}`], ...BILL_CAT_NAMES.map(c => [c, c])], hint: b.cat && b.cat !== 'auto' ? '' : 'From the name; Other when the name doesn’t say'})}
       ${field('bill', 'note', 'Note', {ph:'Optional'})}
@@ -2350,7 +2364,6 @@ function billForm(){
     ${isI ? instFormBits(b) : ''}
     <div class="actions">${isI ? `<label class="chk"><input type="checkbox" data-f="bill.renews" id="f_bill_renews"${b.renews !== false ? ' checked' : ''}> Comes back every year, with a new amount</label>` : `<label class="chk"><input type="checkbox" data-f="bill.vault" id="f_bill_vault"${b.vault ? ' checked' : ''}> Save for it in a Vault every week</label>
       <label class="chk"><input type="checkbox" data-f="bill.variable" id="f_bill_variable"${b.variable ? ' checked' : ''}> The amount changes every time (electricity, gas)</label>`}
-      <label class="chk"><input type="checkbox" data-f="bill.manual" id="f_bill_manual"${b.manual ? ' checked' : ''}> Paid by hand (bank transfer), not taken automatically</label>
       <label class="chk"><input type="checkbox" data-f="bill.active" id="f_bill_active"${b.active !== false ? ' checked' : ''}> Active</label></div>
     ${isI ? '' : b.vault ? `<div class="form">${vaultBox}</div>${(() => { const amt = num(b.amount), nx = isM ? null : pd(b.anchor); if (!(amt > 0) || !nx) return ''; const vs = vaultStatus({...b, amount: amt, saved: num(b.saved), savedOn: iso(today()), createdAt: new Date().toISOString(), active: true}); return vs.next ? `<p class="tip">Saving <b>${money(vs.weekly)} a week</b> has ${money(amt)} ready by ${dlong(vs.next)}.${vs.behind ? ` That’s a catch-up amount; after this bill it drops to ${money(Math.ceil(vs.steady - 0.001))} a week.` : ''}</p>` : ''; })()}` : (!isM && fq !== 'weekly' && fq !== 'ndays' ? '<p class="tip">Bills that don’t come every month are safer with a Vault, so the money is ready when they arrive.</p>' : '')}
     ${(() => { if (b._id || b.vault || (b.kind || 'debit') !== 'debit' || (b.account || 'bills') !== 'bills' || !(num(b.amount) > 0)) return '';   // a new bill from the Bills Pocket: is the money there, and which day suits it
@@ -3705,6 +3718,7 @@ function cardPayPanel(){
 const payFrom = () => { const t = today(), s0 = pd(st().startedOn), f = addDays(t, -14); return s0 && s0 > f ? s0 : f; };
 const autoBill = b => ['bills', 'card'].includes(b.account) && !b.manual;   // direct debits and card charges take themselves; a bank transfer done by hand doesn't
 const payLead = b => b.account === 'nubank' ? 3 : 0;   // Brazil bills are sent through Wise 3 days before they're due
+const payOn = (b, d) => payLead(b) ? addDays(d, -payLead(b)) : billLeaves(b, d);   // the day a bill shows in Pay
 function stepLive(x, ws){   // a Vault or emergency fund transfer only exists from the week its first bill or plan was set up
   const pdy = iso(cardPayday(ws));
   if (x.id === 'vaults' || x.id.startsWith('vault-')){ const vb = x.id === 'vaults' ? vaultBills() : vaultBills().filter(b => 'vault-' + b.id === x.id); return vb.some(b => !b.createdAt || String(b.createdAt).slice(0, 10) <= pdy); }
@@ -3748,8 +3762,8 @@ function payItems(from, to){   // bill payments whose pay day falls between from
   const t = today(), out = [];
   for (const b of billsTimeline()){
     const lead = payLead(b);
-    for (const d of occurrences(b, addDays(from, lead), addDays(to, lead))){
-      const on = addDays(d, -lead);
+    for (const d of occurrences(b, addDays(from, lead - 5), addDays(to, lead))){
+      const on = payOn(b, d); if (on < from || on > to) continue;
       const wiseDone = lead ? S.wise.find(w => pd(w.date) && pd(w.date) >= addDays(on, -10) && pd(w.date) <= d && String(w.purpose || '').toLowerCase().includes(b.name.toLowerCase())) : null;   // already sent from Money → Transfers
       out.push({key: `b:${b.id}:${iso(d)}`, kind: 'bill', b, d, on, name: occName(b, d), amount: occAmount(b, d), logged: histAt(b, d) || wiseDone || null, late: on < t});
     }
@@ -3784,7 +3798,7 @@ function payNow(){   // every payment whose day has come (from the system start,
 const payToDo = () => payNow().filter(x => !x.logged);
 function payNext(){   // the next day something will show up in Pay
   const t = today(), c = [];
-  for (const b of activeBills()){ const d = occurrences(b, addDays(t, 1 + payLead(b)), addDays(t, 400))[0]; if (d) c.push({on: addDays(d, -payLead(b)), name: b.name}); }
+  for (const b of activeBills()){ const on = occurrences(b, addDays(t, payLead(b) - 4), addDays(t, 400)).map(d => payOn(b, d)).find(d => d > t); if (on) c.push({on, name: b.name}); }
   const cp = cardPayday(weekStartOf(t)), cpN = cp > t ? cp : cardPayday(addDays(weekStartOf(t), 7));
   if (num(st().cardWeekly) > 0) c.push({on: cpN, name: 'AIB card weekly payment'});
   if (flow().configured){ for (const wsN of [weekStartOf(t), addDays(weekStartOf(t), 7)]){ const wkT = (S.weeks[iso(wsN)] || {}).transfers || {}; for (const id of ['rory', 'thiago']){ const p2 = payDate(id, wsN); if (p2 && p2.d > t && !wkT[id]) c.push({on: p2.d, name: `${id === 'rory' ? 'Rory' : 'Thiago'} → Joint${p2.moved ? ` (early: ${p2.why})` : ''}`}); } } }
@@ -3798,6 +3812,7 @@ function payHow(it){
   const b = it.b;
   if (b.account === 'nubank') return `Send through Wise to Nubank${it.late ? '' : ' today'}. Due in Brazil ${fWD.format(it.d)} ${dshort(it.d)}.`;
   if (b.account === 'bills' && b.manual) return 'Pay it by bank transfer from the Bills Pocket, then confirm here.';
+  if (chargeLeft(b, it.d, iso(it.d))) return `Due ${fWD.format(it.d)} ${dshort(it.d)}, ${holidayOn(it.d) ? 'a bank holiday' : 'a weekend'}. Tap the day it left in the bank app: the app learns when this bill is charged.`;
   if (b.account === 'bills') return 'Direct debit from the Bills Pocket. Check it went out at this amount.';
   if (b.account === 'card') return 'Charged to the AIB card. Check the amount in the AIB app.';
   if (b.account === 'joint') return 'Pay it from the Joint account.';
@@ -3812,8 +3827,13 @@ function payRow(it){
   if (it.kind === 'card') return `<div class="payrow"><div class="paymain"><div><b>AIB credit card</b><small>This week’s payment from AIB savings. Pay what you can.</small></div><div class="payr"><span class="mono">${money(it.amount)}</span><small>${when}</small></div></div>${S.canWrite ? `<div class="payform">${cardPayStep(iso(it.ws))}</div>` : ''}</div>`;
   const b = it.b, quick = !b.variable && b.account !== 'nubank';
   return `<div class="payrow${open ? ' open' : ''}"><div class="paymain"><div><b>${esc(b.name)}</b><small>${esc(payHow(it))}</small></div><div class="payr"><span class="mono">${b.variable ? '≈ ' : ''}${money(it.amount)}</span><small>${when}</small></div></div>
-    ${S.canWrite ? `<div class="actions payacts">${quick ? `<button class="btn small strong" data-act="ppQuick" data-k="${esc(it.key)}">✓ Paid ${money(it.amount)}</button>` : ''}<button class="btn small${open ? ' on' : ''}" data-act="payOpen" data-k="${esc(it.key)}">${open ? 'Close' : quick ? 'The amount was different' : b.account === 'nubank' ? 'Log the Wise transfer' : 'Enter the amount on the bill'}</button></div>` : ''}
+    ${S.canWrite ? `<div class="actions payacts">${quick ? payQuick(it) : ''}<button class="btn small${open ? ' on' : ''}" data-act="payOpen" data-k="${esc(it.key)}">${open ? 'Close' : quick ? 'The amount was different' : b.account === 'nubank' ? 'Log the Wise transfer' : 'Enter the amount on the bill'}</button></div>` : ''}
     ${open ? `<div class="payform">${payForm(it)}</div>` : ''}</div>`;
+}
+function payQuick(it){   // ✓ Paid; a direct debit or card charge due on a weekend or bank holiday asks the day it left (one tap), so the money check is right and the app learns the bill
+  const k = esc(it.key), nx = nextWorkingDay(it.d), btn = (d, txt) => `<button class="btn small strong" data-act="ppQuick" data-k="${k}" data-v="${iso(d)}">${txt}</button>`;
+  if (!chargeLeft(it.b, it.d, iso(it.d))) return btn(it.on, `✓ Paid ${money(it.amount)}`);
+  return btn(it.d, `✓ Left ${fWD.format(it.d)} ${dshort(it.d)}`) + (nx <= today() ? btn(nx, `✓ Left ${fWD.format(nx)} ${dshort(nx)}`) : '');
 }
 function confirmActs(it){
   if (it.kind === 'step') return `<div class="actions payacts"><button class="btn small strong" data-act="stepDone" data-w="${iso(it.ws)}" data-id="${esc(it.x.id)}">✓ Done, ${money(it.amount)} sent</button><button class="btn small${S.payOpen === it.key ? ' on' : ''}" data-act="payOpen" data-k="${esc(it.key)}">${S.payOpen === it.key ? 'Close' : 'A different amount was sent'}</button></div>`;
@@ -3833,9 +3853,9 @@ function payForm(it){
     ${b.freq === 'instal' ? `<p class="mut fs88">Payment ${(instAt(b, it.d) || {}).k || '?'} of ${(instAt(b, it.d) || {}).n || '?'}. To change the total or the number of payments, edit the bill in Money → Bills.</p>` : !b.variable ? `<label class="chk"><input type="checkbox" data-f="pp.${k}_upd"${v[`${k}_upd`] ? ' checked' : ''}> From now on, this bill is this amount</label>` : '<p class="mut fs88">The estimate for the next one updates itself from the real bills.</p>'}
     ${formEnd(S.errAt === 'pp' + k, 'ppSave', abroad ? 'Log the transfer' : 'Save this amount', ` data-k="${esc(it.key)}"`)}</div>`;
 }
-async function ppSave(key, quick){
+async function ppSave(key, quick, left){   // left: the day it left, from Pay's one-tap buttons for a bill due on a weekend or bank holiday
   const {id, due} = ppParse(key), b = S.bills.find(x => x.id === id); if (!b) return;
-  const d = pd(due), on = addDays(d, -payLead(b)), v = S.f.pp || {}, k = ppK(id, due), r2 = x => Math.round(num(x) * 100) / 100;
+  const d = pd(due), on = pd(left) || payOn(b, d), v = S.f.pp || {}, k = ppK(id, due), r2 = x => Math.round(num(x) * 100) / 100;
   const amt = r2(!quick && has(v[`${k}_amount`]) ? v[`${k}_amount`] : occAmount(b, d));
   const date = !quick && pd(v[`${k}_date`]) ? v[`${k}_date`] : iso(b.account === 'nubank' ? today() : on);
   S.errAt = 'pp' + k;
@@ -3843,14 +3863,15 @@ async function ppSave(key, quick){
   if (b.variable && quick) return (S.err = 'Enter the amount on the bill.', render());
   if (!needDb()) return; S.err = '';
   try {
-    const extra = {due};
+    const extra = {due}, lw = chargeLeft(b, d, date); if (lw) extra.left = lw;
     if (b.account === 'nubank'){ const wid = 'pp' + Date.now().toString(36); await S.db.doc('wise/' + wid).set({date, eur: amt, fee: r2(v[`${k}_fee`]), brl: r2(v[`${k}_brl`]), purpose: b.name, at: new Date().toISOString()}); extra.wiseId = wid; }
     if (b.variable){ S.f.vbf = {...(S.f.vbf || {}), [`${id}_amount`]: String(amt), [`${id}_date`]: date}; await varLog(id, extra); }
     else {
       const old = histAt(b, d), ix = b.freq === 'instal' ? instAt(b, d) : null, plan = ix ? ix.amount : num(b.amount);   // a payment of a plan is planned at its own instalment
       const hist = billHist(b).filter(x => x !== old).concat([{date, amount: amt, planned: plan, ...extra, at: new Date().toISOString()}]).sort((x, y) => x.date.localeCompare(y.date));
-      const patch = {history: hist, updatedAt: new Date().toISOString()}; if (v[`${k}_upd`] && !ix && amt !== num(b.amount)) patch.amount = amt;
+      const patch = {history: hist, updatedAt: new Date().toISOString()}, learn = chargeLearned(b, hist); if (v[`${k}_upd`] && !ix && amt !== num(b.amount)) patch.amount = amt; if (learn) patch.charge = learn;
       await S.db.doc('bills/' + id).update(patch);
+      if (learn) await chargeLog(b, learn);
       await logChange('bill', `Paid ${occName(b, d)}: ${money(amt)} on ${dshort(pd(date))}${Math.abs(amt - plan) >= .005 ? ` (the bill says ${money(plan)}${patch.amount ? '; updated to the new amount from now on' : '; one-off'})` : ''}`);
     }
     if (b.vault){   // the bill was paid, so its Vault money was moved: tick that too
@@ -4002,7 +4023,7 @@ function varTodos(){
     const occ = occurrences(b, addDays(t, -21), addDays(t, 21));
     for (const d of occ){
       if (histAt(b, d)) continue;
-      if (addDays(d, -payLead(b)) <= t && d >= payFrom()) continue;   // its day has come: it's in Pay
+      if (payOn(b, d) <= t && d >= payFrom()) continue;   // its day has come: it's in Pay
       if (d < t) out.push({st: 'warn', txt: `${b.name} was due around ${dshort(d)}. Log what it really cost, so its Vault and the estimate stay right.`});
       else out.push({st: 'idle', txt: `${b.name} is due around ${dshort(d)} (about ${money(b.amount)}). When the bill arrives, log the real amount.`});
     }
@@ -4047,7 +4068,7 @@ async function varLog(id, extra = {}){
   if (recent && b.vault) entry.held = num(b.amount);          // what the Vault was saving towards for this bill
   const hist = billHist(b).filter(x => Math.abs(dayDiff(pd(x.date), pd(date))) > 10).concat([entry]).sort((x, y) => x.date.localeCompare(y.date));
   const isLatest = hist[hist.length - 1] === entry;
-  const patch = {history: hist, updatedAt: new Date().toISOString()};
+  const patch = {history: hist, updatedAt: new Date().toISOString()}, learn = chargeLearned(b, hist); if (learn) patch.charge = learn;
   if (isLatest && pd(date) >= addDays(today(), -60) && b.freq !== 'monthly' && !occurrences(b, addDays(pd(date), -3), addDays(pd(date), 3)).length) patch.anchor = date;   // the cycle follows the real dates
   const after = {...b, ...patch};
   const nextAfter = occurrences(after, addDays(pd(date), 11), addDays(pd(date), 400))[0] || null;
@@ -4056,6 +4077,7 @@ async function varLog(id, extra = {}){
   if (id === EN().billId && enOn()) patch.anchor = iso(enTarget(after).on);   // electricity: the next date comes from the forecast
   try {
     await S.db.doc('bills/' + id).update(patch);
+    if (learn) await chargeLog(b, learn);
     const diff = entry.held != null ? (amt <= entry.held ? ` ${money(entry.held - amt)} stays in the Vault for the next one.` : ` ${money(amt - entry.held)} more than the Vault was saving; the Bills Pocket buffer covers it.`) : '';
     await logChange('bill', `${b.name}: real bill ${money(amt)}, taken ${dshort(pd(date))}${num(b.amount) ? ` (estimate was ${money(b.amount)})` : ''}.${diff} Next estimate: ${money(est)}.`, {tell: ''});
     delete v[`${id}_amount`]; delete v[`${id}_date`]; toast('Bill logged'); render();
@@ -5397,11 +5419,11 @@ async function prepAction(a, b){
 }
 
 /* ---------- a bill paid early (or late) by hand: its money leaves on the day it was really paid ---------- */
-function billDays(b, a, z){   // the days a bill's money really leaves between a and z: its due day, or the day it was paid when that was different
-  const moved = billHist(b).filter(x => x.due && x.date && x.date !== x.due && pd(x.due) && pd(x.date));
-  const ds = occurrences(b, a, z);
-  if (!moved.length) return ds.map(d => ({d, due: d}));
-  const out = ds.filter(d => !moved.some(x => x.due === iso(d))).map(d => ({d, due: d}));
+function billDays(b, a, z){   // the days a bill's money really leaves between a and z: the day it was paid when it's logged, else the day it's expected (its due day, or the next working day for a working-days bill)
+  const moved = billHist(b).filter(x => x.due && x.date && pd(x.due) && pd(x.date));
+  const ds = occurrences(b, addDays(a, -5), z).map(d => ({d: billLeaves(b, d), due: d})).filter(o => o.d >= a && o.d <= z);   // a working-days bill due on a weekend or bank holiday leaves the next working day
+  if (!moved.length) return ds;
+  const out = ds.filter(o => !moved.some(x => x.due === iso(o.due)));
   for (const x of moved){ const p = pd(x.date), due = pd(x.due); if (p >= a && p <= z && occurrences(b, addDays(due, -1), due).some(o => iso(o) === x.due)) out.push({d: p, due}); }
   return out.sort((p, q) => p.d - q.d);
 }
@@ -5556,7 +5578,7 @@ function cardIntPanel(){
 }
 
 /* ---------- system health: the page checks itself every time it opens; Claude runs the full check every Monday ---------- */
-const APP_VERSION = '2026.11.14-3';
+const APP_VERSION = '2026.11.14-4';
 function selfCheck(){   // cheap checks on the data, run on every open: things that don't fit, and the weekly tasks that should have run
   const key = `${S._rt}|${iso(today())}`; if (S._hc && S._hc.k === key) return S._hc.v;
   const items = [], t = today(), add = (st2, area, txt) => items.push({st: st2, area, t: txt});
@@ -6616,7 +6638,7 @@ async function billSave(){
     name: String(b.name || '').trim(), amount: Math.round(num(b.amount) * 100) / 100, freq: b.freq || 'monthly',
     account: b.account || 'bills', kind: 'debit', vault: !!b.vault, active: b.active !== false, note: String(b.note || '').trim(), variable: !!b.variable
   };
-  if (b.manual) out.manual = true;
+  if (b.charge === 'hand') out.manual = true; else if (CHARGE[b.charge]) out.charge = b.charge;
   let instLog = '';
   if (out.freq === 'instal'){   // a payment plan: the total goes into a period of 1 to 12 monthly payments
     const old = b._id ? (S.bills.find(x => x.id === b._id) || {}) : {}, cyc = instCycles(old).map(c => ({total: num(c.total), n: Math.round(num(c.n)), first: c.first}));
@@ -6673,6 +6695,7 @@ async function billSave(){
       if (instLog) diffs.push(instLog);
       else if (old.freq !== out.freq || num(old.everyDays) !== num(out.everyDays)) diffs.push(`now ${freqText(out).toLowerCase()}`);
       if (!!old.manual !== !!out.manual) diffs.push(out.manual ? 'now paid by hand' : 'now taken automatically');
+      if (!out.manual && (old.charge || '') !== (out.charge || '')) diffs.push(out.charge === 'work' ? 'charged on working days only' : out.charge === 'any' ? 'charged on its day, weekends too' : 'when it’s charged: not set');
       if (chLog) diffs.push(chLog);
       else {
         if (out.freq !== 'instal' && (num(old.dueDay) !== num(out.dueDay) || (old.anchor || '') !== (out.anchor || ''))) diffs.push(`due ${dueText(out).toLowerCase()}`);
@@ -6915,7 +6938,7 @@ document.addEventListener('click', async e => {
     case 'goSetup': go('setup'); break;
     case 'seg': { const f = b.dataset.form; (S.f[f] ||= {})[b.dataset.key] = b.dataset.val; render(); break; }
     case 'billNew': S.billOpen = true; S.err = ''; S.confirmDel = false; S.f.bill = {freq: 'monthly', account: 'bills', kind: 'debit', active: true, cat: 'auto'}; render(); break;
-    case 'billEdit': { const x = S.bills.find(y => y.id === b.dataset.id); if (!x) break; S.f.bill = {...x, _id: x.id, amount: String(x.amount ?? ''), dueDay: x.dueDay ?? '', everyDays: x.everyDays ?? '', cat: x.cat || 'auto', brlAmount: x.brlAmount ?? '', saved: has(x.saved) ? String(x.saved) : '', chMode: 'from', chFrom: iso(today())}; delete S.f.bill.id;
+    case 'billEdit': { const x = S.bills.find(y => y.id === b.dataset.id); if (!x) break; S.f.bill = {...x, _id: x.id, amount: String(x.amount ?? ''), dueDay: x.dueDay ?? '', everyDays: x.everyDays ?? '', cat: x.cat || 'auto', charge: x.manual ? 'hand' : x.charge || '', brlAmount: x.brlAmount ?? '', saved: has(x.saved) ? String(x.saved) : '', chMode: 'from', chFrom: iso(today())}; delete S.f.bill.id;
       if (x.freq === 'instal'){ const cy = instCycles(x), c = cy[cy.length - 1]; if (c) Object.assign(S.f.bill, {amount: String(c.total), n: String(c.n), anchor: c.first, cycMode: 'this'}); } S.billOpen = true; S.err = ''; S.confirmDel = false; render(); window.scrollTo({top: 0}); break; }
     case 'billFreq': { const f = S.f.bill ||= {}; const v = b.dataset.val; f.freq = v === 'other' ? (['quarterly', 'weekly', 'ndays'].includes(f.freq) ? f.freq : 'quarterly') : v; if (!f._id && (f.freq === 'bimonthly' || f.freq === 'annual' || f.freq === 'quarterly')) f.vault = true; if (!f._id && f.freq === 'monthly') f.vault = false; if (f.freq === 'instal'){ f.vault = false; f.variable = false; f.n ||= '12'; if (f.renews == null) f.renews = true; } render(); break; }
     case 'vaultSaved': { if (!needDb()) break; const x = S.bills.find(y => y.id === b.dataset.id); const v = (S.f.vs || {})[b.dataset.id]; if (!x || !has(v)) { toast('Type the amount now in the Vault first.'); break; } const amt = Math.round(num(v) * 100) / 100; try { await S.db.doc('bills/' + x.id).update({saved: amt, savedOn: iso(today()), savedAt: new Date().toISOString()}); await logChange('bill', `${x.name} Vault balance updated: ${money(amt)}`); delete S.f.vs[x.id]; toast('Vault updated'); } catch (er) { writeErr(er); } break; }
@@ -7024,7 +7047,7 @@ document.addEventListener('click', async e => {
     case 'stepDone': await stepSave(b.dataset.w, b.dataset.id, true); break;
     case 'stepAmt': await stepSave(b.dataset.w, b.dataset.id, false); break;
     case 'tickKey': await tickKey(b.dataset.w, b.dataset.id, b.dataset.v === '1'); break;
-    case 'ppQuick': await ppSave(b.dataset.k, true); break;
+    case 'ppQuick': await ppSave(b.dataset.k, true, b.dataset.v); break;
     case 'ppUndo': await ppUndo(b.dataset.id, b.dataset.at); await enSync(); break;
     case 'schLog': { const e = S.cardlog.find(y => y.id === b.dataset.id); if (!e) break; S.f.spend = {date: String(e.at || '').slice(0, 10) || iso(today()), what: e.note || '', amount: String(e.amount), cat: '', paidFrom: 'card', who: '', kind: '', told: '', note: '', sched: e.id}; S.tab = 'today'; S.todayOpen = 'log'; S.err = ''; render(); document.getElementById('f_spend_what')?.scrollIntoView({block: 'center'}); break; }
     case 'schCancel': S.f.spend = {date: iso(today()), what: '', amount: '', cat: '', paidFrom: 'joint', who: '', kind: 'need', told: 'before', note: ''}; S.todayOpen = ''; S.err = ''; render(); break;
