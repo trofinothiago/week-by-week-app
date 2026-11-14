@@ -388,13 +388,6 @@ tfoot td{font-weight:600;background:var(--rule2)}
 .bgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
 @media (max-width:760px){.bgrid{grid-template-columns:minmax(0,1fr)}}
 .paper .bgrid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
-.bsteps{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}
-@media (max-width:520px){.bsteps{grid-template-columns:repeat(3,minmax(0,1fr))}}
-.paper .bsteps{grid-template-columns:repeat(6,minmax(0,1fr))}
-.bsteps span{display:grid;justify-items:center;gap:3px;font:800 1rem var(--f-display);padding:8px 2px;border-radius:10px;border:1px solid var(--rule);color:var(--muted)}
-.bsteps small{font:600 .68rem/1.1 var(--f-display);text-align:center}
-.bsteps .done{background:var(--ok-t);color:var(--ok);border-color:var(--ok)}
-.bsteps .now{background:var(--ink);color:var(--sheet);border-color:var(--ink)}
 .bheads{list-style:none;margin:0;padding:0;display:grid;gap:9px}
 .bheads li{display:flex;gap:10px;align-items:center;font-size:.98rem;line-height:1.3}
 .bi{flex:none;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font:800 .85rem var(--f-display);color:#fff;background:var(--muted)}
@@ -418,8 +411,18 @@ tfoot td{font-weight:600;background:var(--rule2)}
 .bavg div i{display:block;height:100%;border-radius:0 4px 4px 0}
 .bavg div s{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink)}
 .bavg b{font:600 .9rem var(--f-mono);text-align:right}
-.bmore{margin-top:14px}
-.bmore>summary{cursor:pointer;font-weight:800;padding:10px 14px;border:1px solid var(--rule);border-radius:12px;background:var(--sheet);margin-bottom:14px}
+/* Rory's report on his phone: the answer first, and each part of the details one line that opens with a tap */
+.bwhy{font-size:1rem;line-height:1.4;padding:10px 14px;border-radius:12px;border-left:5px solid var(--muted);background:var(--sheet)}
+.bwhy.bad{border-left-color:var(--bad)} .bwhy.warn{border-left-color:var(--warn)} .bwhy.ok{border-left-color:var(--ok)}
+.bdetail > .bl{margin-top:6px}
+.bcard.bfold{padding:0;gap:0}
+.bfold > summary{list-style:none;display:flex;align-items:center;gap:10px;padding:13px 14px;cursor:pointer;font-size:1.02rem}
+.bfold > summary::-webkit-details-marker{display:none}
+.bfold > summary .bh{margin-left:auto;text-align:right}
+.bfold > summary .bh.neg{color:var(--bad)}
+.bfold > summary::after{content:"›";flex:none;font:600 1.35rem/1 var(--f-display);color:var(--muted);transition:transform .15s}
+.bfold[open] > summary::after{transform:rotate(90deg)}
+.bfbody{padding:0 14px 14px;display:grid;gap:8px}
 .bnext{display:grid;gap:7px}
 .bnext div{display:grid;grid-template-columns:62px minmax(0,1fr) auto;gap:8px;align-items:baseline;font-size:.95rem}
 .bnext span{font:600 .85rem var(--f-mono);color:var(--muted)}
@@ -2873,7 +2876,7 @@ function headsUp(ws, D, all){
   out.push(...prepHeads(ws));   // Ready: an official warning to act on, cash at home used   // decisions: made without Rory, waiting for his answer, decided together
   const r = recPairs().filter(x => iso(x.z) >= D.wsI && iso(x.z) <= D.weI).pop();
   if (r && !r.ok) out.push(r.note ? {st: 'warn', i: '!', t: `Money check off by ${m0(Math.abs(r.gap))} (explained)`} : {st: 'bad', i: '✕', t: `${m0(Math.abs(r.gap))} ${r.gap < 0 ? 'missing' : 'extra'} in the accounts`});
-  if (D.fl.configured && D.jointW.v < -0.5) out.push({st: 'bad', i: '✕', t: `Free money over by ${m0(-D.jointW.v)}`});
+  if (D.fl.configured && D.jointW.v < -0.5) out.push({st: 'bad', i: '✕', t: `The Joint is ${m0(-D.jointW.v)} short for the shop this week`});
   { const pw = payWeek(ws);
     if (pw.unpaid.length) out.push({st: 'bad', i: '✕', t: `Not paid yet: ${pw.unpaid.map(x => x.name).join(', ')}`});
     if (pw.cardMissing) out.push({st: 'warn', i: '!', t: 'Card payment not logged this week'});
@@ -2892,6 +2895,7 @@ function headsUp(ws, D, all){
     if (inn.length){ const ad = inn.filter(isAdd), other = inn.filter(m => !isAdd(m));
       if (ad.length) out.push({st: 'ok', i: '+', t: `Money added: ${tot(ad)} (${addsWhoText(ad, m0)})`});
       if (other.length) out.push({st: 'ok', i: '+', t: `Extra money in: ${tot(other)}${other.length === 1 && other[0].note ? ` (${String(other[0].note).slice(0, 20)})` : ''}`}); } }
+  if (D.isCurrent && !out.some(x => /still to put back/.test(x.t))){ const ow = potOwed('bills').owe; if (ow > .005) out.push({st: 'warn', i: '!', t: `${m0(ow)} still to put back in the Bills Pocket (rule 1)`}); }   // money owed back shows every week until it's back, not only the week it was taken
   if (D.isCurrent){ const AD = advisor(); if (AD && AD.mode === 'tighten') out.push({st: 'warn', i: '!', t: 'Tighten week: needs only'}); }
   for (const who of ['thiago', 'rory']){ const x = payDate(who, ws); if (x && x.moved) out.push({st: 'ok', i: '•', t: `${x.why.split(' on ')[0]}: ${WHO_INC[who].name} paid ${fWD.format(x.d)} ${x.d.getDate()}`}); }   // bank holidays move a payday
   if (D.isCurrent){ const A = dueAdvice(), R = billRoom();   // the Bills Pocket in the next 2 weeks, and whether a new bill is OK
@@ -2924,40 +2928,53 @@ function boardVerdict(items){
   const st = items.some(x => x.st === 'bad') ? 'bad' : items.some(x => x.st === 'warn') ? 'warn' : 'ok';
   return {st, label: st === 'bad' ? 'Needs a chat' : st === 'warn' ? 'Keep an eye on it' : 'Good week', icon: st === 'bad' ? '✕' : st === 'warn' ? '!' : '✓'};
 }
-function reportBoard(ws, forPdf, D){
+function reportBoard(ws, forPdf, D){   // Rory's page 1 (Rory asked, 14 Nov 2026: friendly, only what matters): the verdict and why, the four numbers, what to talk about, heads-up, the next days, the road to €0
   const C = forPdf ? RC_PAPER : RC_LIVE, P = D.plan, items = headsUp(ws, D), v = boardVerdict(items);
+  const TL = D.isCurrent ? trendLight(D.td, D.sig) : null, talkL = D.isCurrent ? trendLines(D.sig).bad : [];
   const bar = (f, col) => `<span class="bbar"><i style="width:${(Math.max(0, Math.min(1, f)) * 100).toFixed(1)}%;background:${col}"></i></span>`;
   const lim = num(st().cardLimit), u = D.cardNow != null && lim > 0 ? Math.max(0, D.cardNow) / lim : null;
   const efGoal = P ? (P.ef >= P.T.starter - .005 ? P.T.full : P.T.starter) : 0;
   const kpi = (label, big, sub, cls, b) => `<div class="bk"><span class="bl">${label}</span><b class="${cls || ''}">${big}</b>${b || ''}<small>${sub}</small></div>`;
+  const cardMove = D.delta != null && Math.abs(D.delta) >= .5 ? `<span class="${D.delta < 0 ? 'pos' : 'neg'}">${D.delta < 0 ? '▼' : '▲'} ${m0(Math.abs(D.delta))}</span> this week` : '', cardPaid = weekCardPay(D.wsI);
   const kpis = `<div class="bkpis">
     ${kpi(D.jointW.now != null ? 'In the Joint now' : essentialsKnown() ? 'Free money left' : 'Joint, for the shop', D.fl.configured ? m0(D.jointW.now != null ? D.jointW.now : D.jointW.v) : '—', D.fl.configured ? jointSub(D.jointW, m0, '') : '', (D.jointW.now != null ? D.jointW.now : D.jointW.v) < 0 ? 'neg' : '', '')}
-    ${kpi('Card owes', D.cardNow != null ? m0(D.cardNow) : '—', weekCardPay(D.wsI) ? `<b>${m0(weekCardPay(D.wsI).amount)}</b> paid this week` : D.delta != null && Math.abs(D.delta) >= .5 ? `<span class="${D.delta < 0 ? 'pos' : 'neg'}">${D.delta < 0 ? '▼' : '▲'} ${m0(Math.abs(D.delta))}</span> this week` : u != null ? `${Math.round(u * 100)}% of limit` : '', '', u != null ? bar(u, utilState(u) === 'bad' ? C.bad : utilState(u) === 'warn' ? '#A0560B' : C.ok) : '')}
+    ${kpi('Card owes', D.cardNow != null ? m0(D.cardNow) : '—', [cardMove, cardPaid ? `<b>${m0(cardPaid.amount)}</b> paid` : ''].filter(Boolean).join(' · ') || (u != null ? `${Math.round(u * 100)}% of limit` : ''), '', u != null ? bar(u, utilState(u) === 'bad' ? C.bad : utilState(u) === 'warn' ? '#A0560B' : C.ok) : '')}
     ${kpi('Emergency fund', P ? m0(P.ef) : '—', P ? `goal ${m0(efGoal)}` : '', '', P ? bar(P.ef / Math.max(1, efGoal), C.s3) : '')}
     ${kpi('No slips for', D.sk ? `${D.sk.days}<span class="unit"> day${D.sk.days === 1 ? '' : 's'}</span>` : '—', D.slipsW.length ? `<span class="neg">${D.slipsW.length} this week</span>` : 'none this week', '')}
   </div>`;
+  const talk = talkL.length ? `<section class="bcard wide"><h3>To talk about together</h3><ul class="bheads">${talkL.map(x => `<li class="warn"><span class="bi">?</span>${esc(x.t)}</li>`).join('')}</ul></section>` : '';
   const ds = debtSeries(D), endD = P && P.sim.debtFree;
   const debt = ds.past.length + ds.future.length >= 2 && D.dz.total > 0
     ? `<section class="bcard wide"><h3>What we owe <span class="bh">${m0(D.dz.total)}${endD ? ` → €0 by ${esc(fMYL.format(endD))}` : ''}</span></h3><div class="chartwrap">${lineChartSVG(ds.past, ds.future, C, {label: 'Everything we owe, and the plan to €0', endLabel: '€0', pdf: forPdf})}</div></section>`
     : `<section class="bcard wide"><h3>What we owe</h3><p class="bbig pos">${D.dz.total > 0 ? m0(D.dz.total) : '€0 🎉'}</p></section>`;
-  const income = D.commit.income > 0 ? `<section class="bcard"><h3>Each month’s money</h3>${donutHTML(incomeSegs(D.commit, C), {big: D.commit.free < 0 ? 'Over' : m0(Math.max(0, D.commit.free)), small: D.commit.free < 0 ? `by ${m0(-D.commit.free)}` : essentialsKnown() ? 'free' : 'before the shop'}, C, 'Where the monthly income goes')}</section>` : '';
-  const cats = {}; D.sp.forEach(x => { const c = x.kind === 'unknown' ? 'Unexplained' : x.cat || 'Other'; cats[c] = (cats[c] || 0) + num(x.amount); });
-  const cr = catRows(cats, 4), colors = [C.s1, C.s2, C.s3, C.s4, C.free];
-  const spend = `<section class="bcard"><h3>Spent this week${(() => { const A = weekAvgs(); return A.n && !A.partial ? ` <small class="bmut">avg ${m0(A.spend)}</small>` : ''; })()}</h3>${D.sp.length ? donutHTML(cr.map((r, i) => ({label: r.label, v: r.v, c: r.label === 'Other' ? C.free : colors[i]})), {big: m0(sumAmt(D.sp)), small: `${D.sp.length} buys`}, C, 'This week’s spending by category') : '<p class="bmut">Nothing logged.</p>'}</section>`;
-  const plan = P ? `<section class="bcard wide"><h3>Our plan <span class="bh">step ${P.cur + 1} of 6 · €1M road ${(Math.max(0, (balanceSheet() || {net: 0}).net) / MIL * 100).toFixed(1)}%</span></h3><div class="bsteps">${STAGES.map((x, i) => `<span class="${P.done[x.k] ? 'done' : i === P.cur ? 'now' : ''}">${P.done[x.k] ? '✓' : i + 1}<small>${esc(x.s)}</small></span>`).join('')}</div></section>` : '';
+  const plan = P ? `<section class="bcard wide"><h3>Our plan <span class="bh">step ${P.cur + 1} of 6</span></h3><p class="bsmall"><span><b>Now: ${esc(STAGES[P.cur].t)}</b>${STAGES[P.cur + 1] ? ` · then ${esc(STAGES[P.cur + 1].s.toLowerCase())}` : ''}</span></p></section>` : '';
+  const nm = it => { const n = it.ln ? `${it.ln.l.lender || it.ln.l.what || 'Loan'} ${it.ln.i}/${it.ln.n}` : String(itemName(it)).replace(/^Klarna · /, ''); return n.length > 22 ? `${n.slice(0, 21)}…` : n; };
   const nx = (D.isCurrent ? billsInRange(today(), addDays(today(), 7)) : D.nextList).filter(it => itemAmt(it) > 0 && !itemPaid(it)).sort((a, b) => itemAmt(b) - itemAmt(a)).slice(0, 4).sort((a, b) => a.d - b.d);
-  const coming = `<section class="bcard"><h3>Next 7 days</h3>${nx.length ? `<div class="bnext">${nx.map(it => `<div><span>${fWD.format(it.d)} ${it.d.getDate()}</span><b>${esc(String(itemName(it)).replace(/^Klarna · /, '').slice(0, 20))}</b><i>${m0(itemAmt(it))}</i></div>`).join('')}</div>` : '<p class="bmut">Nothing big.</p>'}</section>`;
+  const coming = `<section class="bcard"><h3>Next 7 days</h3>${nx.length ? `<div class="bnext">${nx.map(it => `<div><span>${fWD.format(it.d)} ${it.d.getDate()}</span><b>${esc(nm(it))}</b><i>${m0(itemAmt(it))}</i></div>`).join('')}</div>` : '<p class="bmut">Nothing big.</p>'}</section>`;
   const heads = `<section class="bcard"><h3>Heads-up</h3>${items.length ? `<ul class="bheads">${items.map(x => `<li class="${x.st}"><span class="bi">${x.i}</span>${esc(x.t)}</li>`).join('')}</ul>` : '<p class="bmut">Nothing to flag.</p>'}</section>`;
   return `<div class="board">
-    <div class="bhead"><div><span class="bl">Week by Week</span><h2>${weekLabel(ws)}</h2></div><div class="bverdict ${v.st}"><span>${v.icon}</span>${v.label}</div></div>
+    <div class="bhead"><div><span class="bl">Hi Rory · here’s our week</span><h2>${weekLabel(ws)}</h2></div><div class="bverdict ${v.st}"><span>${v.icon}</span>${v.label}</div></div>
+    ${TL && TL.st !== 'idle' ? `<p class="bwhy ${TL.st}"><b>${esc(TL.head)}.</b> ${esc(TL.why.replace(/(the card|all debts) ([▲▼]) (€[\d,.]+)\/week/gi, (m, w, a, v) => `${w} ${a === '▲' ? 'is going up' : 'is coming down'} about ${v} a week on average`))}</p>` : ''}
     ${kpis}
-    ${debt}
-    <div class="bgrid">${income}${spend}</div>
-    ${plan}
-    <div class="bgrid">${heads}${coming}</div>
+    ${talk}
     ${D.wk.note ? `<section class="bcard wide bnote"><h3>From Thiago</h3><p>${esc(D.wk.note)}</p></section>` : ''}
+    <div class="bgrid">${heads}${coming}</div>
+    ${debt}
+    ${plan}
+    ${forPdf ? `<div class="bgrid">${reportMonthCards(D, true).map(x => bsec(x, true)).join('')}</div>` : ''}
     ${forPdf ? `<p class="bfoot">Made ${dlong(today())} · every number comes from our Week by Week system</p>` : ''}
   </div>`;
+}
+const bsec = (x, forPdf) => !x ? '' : forPdf   // one part of Rory's report: a card on paper, a line that opens with a tap on his phone (open at first only when it asks for action: x.open)
+  ? `<section class="bcard${x.wide ? ' wide' : ''}"><h3>${x.t}${x.s ? ` <span class="bh">${x.s}</span>` : ''}</h3>${x.body}</section>`
+  : `<details class="bcard bfold${x.cls ? ` ${x.cls}` : ''}" data-fold="rd:${x.k}"${((S.eOpen || {})['rd:' + x.k] ?? x.open) ? ' open' : ''}><summary><b>${x.t}</b>${x.s ? `<span class="bh${x.bad ? ' neg' : ''}">${x.s}</span>` : ''}</summary><div class="bfbody">${x.body}</div></details>`;
+function reportMonthCards(D, forPdf){   // each month's money and this week's spending: on page 1 of the PDF, one tap away on his phone
+  const C = forPdf ? RC_PAPER : RC_LIVE, out = [];
+  if (D.commit.income > 0) out.push({k: 'month', t: 'Each month’s money', s: D.commit.free < 0 ? `over by ${m0(-D.commit.free)}` : `${m0(Math.max(0, D.commit.free))} ${essentialsKnown() ? 'free' : 'before the shop'}`, bad: D.commit.free < 0, body: donutHTML(incomeSegs(D.commit, C), {big: D.commit.free < 0 ? 'Over' : m0(Math.max(0, D.commit.free)), small: D.commit.free < 0 ? `by ${m0(-D.commit.free)}` : essentialsKnown() ? 'free' : 'before the shop'}, C, 'Where the monthly income goes')});
+  const cats = {}; D.sp.forEach(x => { const c = x.kind === 'unknown' ? 'Unexplained' : x.cat || 'Other'; cats[c] = (cats[c] || 0) + num(x.amount); });
+  const cr = catRows(cats, 4), colors = [C.s1, C.s2, C.s3, C.s4, C.free], A = weekAvgs();
+  out.push({k: 'spent', t: 'Spent this week', s: `${m0(sumAmt(D.sp))}${A.n && !A.partial ? ` · avg ${m0(A.spend)}` : ''}`, body: D.sp.length ? donutHTML(cr.map((r, i) => ({label: r.label, v: r.v, c: r.label === 'Other' ? C.free : colors[i]})), {big: m0(sumAmt(D.sp)), small: `${D.sp.length} buys`}, C, 'This week’s spending by category') : '<p class="bmut">Nothing logged.</p>'});
+  return out;
 }
 /* ---------- report page 2: everything that happened this week, in detail ---------- */
 const shortRoute = (from, to) => `${String(from).replace(/^Rory's personal$/, 'Rory').replace(/^Thiago's personal$/, 'Thiago').replace(/^Joint account.*$/, 'Joint')} → ${String(to).replace(/^Vault · /, 'Vault ').replace(/^Joint account$/, 'Joint')}`;
@@ -2994,12 +3011,12 @@ function reportDetails(ws, forPdf, D){
   const row = (s, n, sub, a) => `<div class="brow">${icon(s)}<span><b>${esc(n)}</b>${sub ? `<small>${sub}</small>` : ''}</span><i>${a}</i></div>`;
   // 1. money moves
   const mv = weekMoves(ws), done = mv.filter(x => x.done).length;
-  const moves = `<section class="bcard wide"><h3>Money moves <span class="bh">${done} of ${mv.length} done</span></h3><div class="bcols">${mv.map(x => row(x.done ? (x.brk ? 'bad' : x.extra ? 'warn' : 'ok') : (D.isCurrent && x.on && x.on > t) ? 'idle' : D.isCurrent ? 'warn' : 'bad', x.n,
+  const moves = {k: 'moves', t: 'Money moves', s: `${done} of ${mv.length} done`, bad: done < mv.length && !D.isCurrent, wide: true, body: `<div class="bcols">${mv.map(x => row(x.done ? (x.brk ? 'bad' : x.extra ? 'warn' : 'ok') : (D.isCurrent && x.on && x.on > t) ? 'idle' : D.isCurrent ? 'warn' : 'bad', x.n,
       x.done ? (x.extra ? (x.brk ? `<b class="neg">moved by hand · rule ${x.brk}</b>` : 'moved by hand') : x.real != null && Math.abs(x.real - x.plan) >= .5 ? `sent · plan ${m0(x.plan)}` : 'sent') : x.on && x.on > t ? `on ${fWD.format(x.on)}` : 'not confirmed',
-      eur(x.done && x.real != null ? x.real : x.plan))).join('')}</div></section>`;
+      eur(x.done && x.real != null ? x.real : x.plan))).join('')}</div>`};
   // 2. bills
   const bl = weekBills(ws), paid = bl.filter(x => x.st === 'ok').reduce((s, x) => s + x.a, 0);
-  const bills = `<section class="bcard"><h3>Bills this week <span class="bh">${m0(paid)} paid</span></h3>${bl.length ? `<div class="blist">${bl.map(x => row(x.st, x.n, `${fWD.format(x.d)} ${x.d.getDate()} · ${x.sub}`, eur(x.a))).join('')}</div>` : '<p class="bmut">No bills this week.</p>'}</section>`;
+  const bills = {k: 'bills', t: 'Bills this week', s: `${m0(paid)} paid`, bad: bl.some(x => x.st === 'bad'), body: bl.length ? `<div class="blist">${bl.map(x => row(x.st, x.n, `${fWD.format(x.d)} ${x.d.getDate()} · ${x.sub}`, eur(x.a))).join('')}</div>` : '<p class="bmut">No bills this week.</p>'};
   // 3. our money now (the week's money check)
   const ck = D.isCurrent ? lastCheck() : sortedChecks().filter(c => c.date <= iso(we)).pop();
   let money3 = '<p class="bmut">No money check yet.</p>';
@@ -3019,35 +3036,37 @@ function reportDetails(ws, forPdf, D){
   const recLine = `<p class="bsmall">${icon(r ? recState(r) === 'ok' ? 'ok' : recState(r) : 'idle')}<span class="grow">${r ? esc(recHeadline(r)) : 'Does the money add up? Checked from the second money check on.'}</span></p>`;
   const pocketLine = (() => { if (!D.isCurrent) return ''; const A = dueAdvice(); if (!A) return ''; const f = A.base.first && dayDiff(today(), A.base.first.d) <= 28 ? A.base.first : null; const jf = A.joint && A.joint.first && dayDiff(today(), A.joint.first.d) <= 28 ? A.joint.first : null;
     return `<p class="bsmall">${icon(f ? 'bad' : 'ok')}<span class="grow">${f ? `Bills Pocket: ${m0(f.short)} short on ${dshort(f.d)} (${esc(f.name)})` : 'Bills Pocket: enough for every bill in the next 4 weeks'}</span></p>${A.joint ? `<p class="bsmall">${icon(jf ? 'bad' : 'ok')}<span class="grow">${jf ? `Joint: ${m0(jf.short)} short on ${dshort(jf.d)}, before payday` : 'Joint: carries every week until the next pay'}</span></p>` : ''}`; })();
-  const now = `<section class="bcard"><h3>Our money ${D.isCurrent ? 'now' : 'that week'}</h3>${money3}${monthLine}${recLine}${pocketLine}${D.isCurrent ? energyLine(icon) + reviewLine(icon) : ''}</section>`;
+  const now = {k: 'money', t: `Our money ${D.isCurrent ? 'now' : 'that week'}`, s: r ? (recState(r) === 'ok' ? 'it adds up ✓' : 'doesn’t add up') : '', bad: !!r && recState(r) === 'bad', body: `${money3}${monthLine}${recLine}${pocketLine}${D.isCurrent ? energyLine(icon) + reviewLine(icon) : ''}`};
   // 4. purchases
   const sp = D.sp.slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
   const KIND = {need: 'need', planned: 'planned', impulse: 'impulse', unknown: 'couldn’t explain'}, WHO = {thiago: 'Thiago', rory: 'Rory', both: 'Both'};
-  const buys = `<section class="bcard"><h3>Purchases <span class="bh">${sp.length} · ${m0(sumAmt(sp))}</span></h3>${sp.length ? `<div class="blist">${sp.slice(0, 10).map(x => row(x.kind === 'unknown' ? 'warn' : isSlip(x) ? 'bad' : 'ok', String(x.what || x.cat || 'Purchase').slice(0, 26),
-      `${fWD.format(pd(x.date))} · ${esc(WHO[x.who] || '')}${x.who ? ' · ' : ''}${esc(KIND[x.kind] || x.kind || '')}${x.kind === 'unknown' ? '' : x.told === 'before' ? ' · Rory knew' : ' · <b class="neg">Rory heard after</b>'}${x.paidFrom === 'card' ? ' · <b class="neg">on the card</b>' : x.paidFrom === 'bills' ? ' · <b class="neg">from the Bills Pocket</b>' : ''}`, eur(num(x.amount)))).join('')}${sp.length > 10 ? `<p class="bmut bsmall">+ ${sp.length - 10} more in the system</p>` : ''}</div>` : '<p class="bmut">Nothing bought this week.</p>'}</section>`;
+  const buys = {k: 'buys', t: 'Purchases', s: `${sp.length} · ${m0(sumAmt(sp))}`, bad: sp.some(isSlip), body: sp.length ? `<div class="blist">${sp.slice(0, 10).map(x => row(x.kind === 'unknown' ? 'warn' : isSlip(x) ? 'bad' : 'ok', String(x.what || x.cat || 'Purchase').slice(0, 26),
+      `${fWD.format(pd(x.date))} · ${esc(WHO[x.who] || '')}${x.who ? ' · ' : ''}${esc(KIND[x.kind] || x.kind || '')}${x.kind === 'unknown' ? '' : x.told === 'before' ? ' · Rory knew' : ' · <b class="neg">Rory heard after</b>'}${x.paidFrom === 'card' ? ' · <b class="neg">on the card</b>' : x.paidFrom === 'bills' ? ' · <b class="neg">from the Bills Pocket</b>' : ''}`, eur(num(x.amount)))).join('')}${sp.length > 10 ? `<p class="bmut bsmall">+ ${sp.length - 10} more in the system</p>` : ''}</div>` : '<p class="bmut">Nothing bought this week.</p>'};
   // 5. against our average
   const A = weekAvgs(), cur = A.hist.find(h => iso(h.ws) === iso(ws)) || weekTotals(ws);
   const max = Math.max(1, cur.spend, cur.bills, cur.card, A.spend, A.bills, A.card);
   const pair = (label, now, avg, col) => `<div class="bavg"><span>${label}</span><div><i style="width:${(now / max * 100).toFixed(1)}%;background:${col}"></i>${A.partial ? '' : `<s style="left:${(avg / max * 100).toFixed(1)}%"></s>`}</div><b>${m0(now)}</b></div>`;
-  const avg = `<section class="bcard"><h3>This week ${A.partial ? '' : '<span class="bh">line = our average</span>'}</h3>
-    ${pair('Purchases', cur.spend, A.spend, C.s1)}${pair('Bills', cur.bills, A.bills, C.s2)}${pair('Card paid', cur.card, A.card, C.s3)}
-    <p class="bmut bsmall">${A.partial ? 'Our weekly averages start once a full week is logged.' : `Average of the last ${A.n} weeks: purchases ${m0(A.spend)}, bills ${m0(A.bills)}, card ${m0(A.card)}.`}</p></section>`;
+  const avg = {k: 'avg', t: 'Against our average', s: '', body: `
+    ${A.partial ? '' : '<p class="bmut bsmall">The line is our average.</p>'}${pair('Purchases', cur.spend, A.spend, C.s1)}${pair('Bills', cur.bills, A.bills, C.s2)}${pair('Card paid', cur.card, A.card, C.s3)}
+    <p class="bmut bsmall">${A.partial ? 'Our weekly averages start once a full week is logged.' : `Average of the last ${A.n} weeks: purchases ${m0(A.spend)}, bills ${m0(A.bills)}, card ${m0(A.card)}.`}</p>`};
   const AD = D.isCurrent ? advisor() : null, wl = AD ? wishItems().map(w => ({w, v: wishVerdict(w, AD)})) : [];
-  const advCard = AD ? `<section class="bcard wide"><h3>The advisor <span class="bh">${MODE[AD.mode].label} week</span></h3><p class="bsmall"><b>${esc(AD.head)}.</b> ${AD.red.length ? esc(AD.red.join('; ')) + '.' : ''}</p>
+  const advCard = AD ? {k: 'advisor', t: 'The advisor', s: `${MODE[AD.mode].label} week`, bad: AD.mode === 'tighten', wide: true, body: `<p class="bsmall"><span><b>${esc(AD.head)}.</b> ${AD.red.length ? esc(AD.red.join('; ').replace(/^./, c => c.toUpperCase())) + '.' : ''}</span></p>
     <div class="blist">${row(AD.mode === 'tighten' ? 'warn' : 'ok', 'Wants money this week', AD.sweep >= 1 ? `the other ${m0(AD.sweep)} goes to ${esc(AD.sweepName)} on Sunday` : '', eur(AD.allowance))}${AD.order[AD.nowIdx] ? row('idle', `Focus: ${AD.order[AD.nowIdx].t}`, esc(AD.order[AD.nowIdx].sub || ''), '') : ''}
-    ${wl.slice(0, 4).map(x => row(x.v.st === 'ok' ? 'ok' : x.v.st === 'bad' ? 'bad' : 'warn', `Wishlist: ${String(x.w.what).slice(0, 22)}`, esc(x.v.v), eur(num(x.w.price)))).join('')}</div></section>` : '';
+    ${wl.slice(0, 4).map(x => row(x.v.st === 'ok' ? 'ok' : x.v.st === 'bad' ? 'bad' : 'warn', `Wishlist: ${String(x.w.what).slice(0, 22)}`, esc(x.v.v), eur(num(x.w.price)))).join('')}</div>`} : null;
+  const parts = [advCard, decisionsCard(ws, D, icon), prepReport(ws, D, icon), moves, bills, now, buys].concat(forPdf ? [] : reportMonthCards(D, false), [avg]).filter(Boolean);
+  if (!forPdf) return `<div class="board bdetail"><span class="bl">The details · tap a line to open it</span>${parts.map(x => bsec(x, false)).join('')}</div>`;
+  const sec = x => bsec(x, true), pair2 = (a, b) => `<div class="bgrid">${sec(a)}${sec(b)}</div>`;
   return `<div class="board bdetail">
     <div class="bhead"><div><span class="bl">Week by Week · the details</span><h2>${weekLabel(ws)}</h2></div></div>
-    ${advCard}
-    ${decisionsCard(ws, D, icon)}${prepReport(ws, D, icon)}
-    ${moves}
-    <div class="bgrid">${bills}${now}</div>
-    <div class="bgrid">${buys}${avg}</div>
-    ${forPdf ? `<p class="bfoot">Page 2 · every number comes from our Week by Week system</p>` : ''}
+    ${sec(advCard)}${sec(decisionsCard(ws, D, icon))}${sec(prepReport(ws, D, icon))}
+    ${sec(moves)}
+    ${pair2(bills, now)}
+    ${pair2(buys, avg)}
+    <p class="bfoot">Page 2 · every number comes from our Week by Week system</p>
   </div>`;
 }
-function reportFull(ws, D){   // the live view: the one-page board, then the details below it
-  return `${reportBoard(ws, false, D)}<details class="bmore"${S.detailsOpen !== false ? ' open' : ''}><summary>The details: money moves, bills, our money, purchases</summary>${reportDetails(ws, false, D)}</details>`;
+function reportFull(ws, D){   // the live view: the one-page board, then each part of the details as one line that opens
+  return `${reportBoard(ws, false, D)}${reportDetails(ws, false, D)}`;
 }
 function vRory(){
   const cur = weekStartOf(today()), ws = S.reportWeek ? pd(S.reportWeek) : cur, isCur = iso(ws) === iso(cur);
@@ -4700,11 +4719,11 @@ function weekDecisions(ws){
 }
 function decisionsCard(ws, D, icon){
   const L = weekDecisions(ws), waiting = D.isCurrent ? roryWaiting() : [];
-  if (!L.length && !waiting.length) return '';
+  if (!L.length && !waiting.length) return null;
   const st = x => x.kind !== 'decision' ? (x.rory === 'no' ? 'bad' : x.rory === 'yes' ? 'ok' : 'idle') : x.step === 'ask' ? 'idle' : x.step === 'answer' ? (x.rory === 'yes' ? 'ok' : 'bad') : x.step === 'apply' ? 'ok' : 'idle';
   const txt = x => x.kind === 'bill' ? `${x.short || x.text}` : (x.short || x.text);
   const rows = L.slice(-8).map(x => `<div class="brow">${icon(st(x))}<span><b>${esc(String(txt(x)).slice(0, 120))}</b><small>${fWD.format(pd(x.date))}${x.kind !== 'decision' ? ` · ${esc(DEC_RORY[x.rory] || '')}` : ''}</small></span><i></i></div>`).join('');
-  return `<section class="bcard wide"><h3>Decisions <span class="bh">${L.length} this week</span></h3><div class="blist">${rows}${waiting.map(x => `<div class="brow">${icon('warn')}<span><b>Waiting for your answer: ${esc(x.title)}</b><small>asked ${esc(cmpWhen(new Date(x.at)))}</small></span><i></i></div>`).join('')}</div>${L.length > 8 ? `<p class="bsmall">and ${L.length - 8} more in History.</p>` : ''}</section>`;
+  return {k: 'decisions', t: 'Decisions', s: `${L.length} this week${waiting.length ? ` · ${waiting.length} waiting` : ''}`, bad: L.some(x => x.kind !== 'decision' && x.rory === 'no'), wide: true, body: `<div class="blist">${rows}${waiting.map(x => `<div class="brow">${icon('warn')}<span><b>Waiting for your answer: ${esc(x.title)}</b><small>asked ${esc(cmpWhen(new Date(x.at)))}</small></span><i></i></div>`).join('')}</div>${L.length > 8 ? `<p class="bsmall">and ${L.length - 8} more in History.</p>` : ''}`};
 }
 function decisionHeads(ws, D){   // page 1 heads-up lines
   const out = [], L = weekDecisions(ws);
@@ -5348,15 +5367,15 @@ function prepHealth(add){
   if (cashHomeAt() < -.005) add('bad', 'Ready', `Cash at home is below zero (${money(cashHomeAt())}): a cash purchase or move is logged twice or the wrong way.`);
 }
 function prepReport(ws, D, icon){
-  if (!S.prep.length) return '';
+  if (!S.prep.length) return null;
   const P = prepNow(), cp = cashPlan(), exp = prepExpiring(14), al = prepAlerts('home').filter(a => a.level !== 'info').slice(0, 1);
   const rows = [
-    [P.pct72 >= 100 ? 'ok' : 'idle', `Kit: ${P.pct72}% ready for 72 hours`, `${PREP_STAGE[P.cur.n].n} next: ${prepOpen(P.cur.n, prepGate()).t}`],
-    [cp.have >= cp.tgt - .005 ? 'ok' : 'idle', `Cash at home ${money(cp.have)} of ${money(cp.tgt)}`, cp.have >= cp.tgt - .005 || cp.open ? 'part of the emergency fund, rule 8' : `waits until ${cp.wait.map(x => x.u).join(' and ')}`],
+    [P.pct72 >= 100 ? 'ok' : 'idle', `Kit: ${P.pct72}% ready for 72 hours`, `${PREP_STAGE[P.cur.n].n} next: ${prepOpen(P.cur.n, prepGate()).t.replace(/^free: /, '')}`],
+    [cp.have >= cp.tgt - .005 ? 'ok' : 'idle', `Cash at home ${money(cp.have)} of ${money(cp.tgt)}`, cp.have >= cp.tgt - .005 || cp.open ? 'part of the emergency fund, rule 8' : 'waits until the money allows it'],
     ...exp.map(e => ['warn', `${e.x.name}: ${e.dl < 0 ? 'expired' : 'use by'} ${dshort(e.d)}`, 'use it in the shop and replace it']),
     ...al.map(a => [a.level === 'act' ? 'bad' : 'warn', `Official: ${String(a.t).slice(0, 90)}`, prepHost(a.url)])
   ];
-  return `<section class="bcard wide"><h3>Ready for emergencies <span class="bh">${prepAgreed() ? 'agreed together' : 'not agreed yet'}</span></h3><div class="blist">${rows.map(([s, b, sm]) => `<div class="brow">${icon(s)}<span><b>${esc(b)}</b><small>${esc(sm)}</small></span><i></i></div>`).join('')}</div></section>`;
+  return {k: 'ready', t: 'Ready for emergencies', s: `${P.pct72}% ready`, bad: rows.some(([s0]) => s0 === 'bad'), wide: true, body: `<div class="blist">${rows.map(([s, b, sm]) => `<div class="brow">${icon(s)}<span><b>${esc(b)}</b><small>${esc(sm)}</small></span><i></i></div>`).join('')}</div><p class="bsmall"><span>${prepAgreed() ? 'Agreed together.' : 'Not agreed yet.'}</span></p>`};
 }
 function prepHeads(ws){
   const out = [], a = iso(ws), z = iso(addDays(ws, 6));
@@ -5578,7 +5597,7 @@ function cardIntPanel(){
 }
 
 /* ---------- system health: the page checks itself every time it opens; Claude runs the full check every Monday ---------- */
-const APP_VERSION = '2026.11.14-4';
+const APP_VERSION = '2026.11.14-5';
 function selfCheck(){   // cheap checks on the data, run on every open: things that don't fit, and the weekly tasks that should have run
   const key = `${S._rt}|${iso(today())}`; if (S._hc && S._hc.k === key) return S._hc.v;
   const items = [], t = today(), add = (st2, area, txt) => items.push({st: st2, area, t: txt});
@@ -5743,7 +5762,7 @@ function ntfBody(){
     <p class="mut fs85">Your own choices, on your own account: nobody else sees or changes them. ${ntfRole() === 'viewer' ? 'The shop, cigarettes and drinks can come together in the evening, with the totals.' : 'Rory chooses his in his own app.'}</p>`;
 }
 function ntfPanel(){ return S.ntf ? `<section class="panel" id="ntfPanel"><header><h2>Notifications</h2><span class="mut fs85">On this phone</span></header>${ntfBody()}</section>` : ''; }
-function ntfRoryCard(){ return S.ntf ? `<div class="board"><section class="bcard wide ntf"><h3>Notifications <span class="bh">on this phone</span></h3>${ntfBody()}</section></div>` : ''; }
+function ntfRoryCard(){ return S.ntf ? `<div class="board">${bsec({k: 'ntf', cls: 'ntf', t: 'Notifications', s: S.ntf.state === 'on' ? 'on for this phone' : 'off on this phone', open: S.ntf.state !== 'on', body: ntfBody()}, false)}</div>` : ''; }
 async function ntfDo(fn, after){   // fn runs straight from the tap: the iPhone only asks for permission from a tap
   const N = S.ntf; if (!N || N.busy) return;
   let p; try { p = fn(N.api); } catch (e) { p = Promise.reject(e); }
@@ -6529,17 +6548,22 @@ function yearView(y){   // Thiago's screen: the answer first, the detail one tap
     <section class="ios-sec"><h2>Decisions</h2><div class="ios-list">${row('ok', 'Decided together', '', String(Y.decisions.together))}${row(Y.decisions.without ? 'bad' : 'ok', 'Decided without Rory', '', String(Y.decisions.without))}${row('idle', 'Not a choice', 'a price rise, a real bill', String(Y.decisions.other))}</div></section>
     ${close}<div class="actions"><button class="btn" data-act="pdf" data-v="${y}"${S.busy ? ' disabled' : ''}>${S.busy ? 'Making the PDF…' : `Download the ${y} PDF`}</button></div>${S.canWrite ? `<div class="ios-list"><details><summary class="ios-row"><span class="dot idle"></span><span class="txt">See it as Rory sees it<small>his own design, the same as the PDF</small></span><span class="end">${ico('chev')}</span></summary><div class="rowbody full"><div class="preview">${yearBoard(Y, false)}</div></div></details></div>` : ''}`;
 }
-function yearBoard(Y, forPdf){   // the year in Rory's own design (his view, and the PDF): one page, the answer first
+function yearBoard(Y, forPdf){   // the year in Rory's own design (his view, and the PDF): the answer first, in plain words; the rest one tap away on his phone
   const C = forPdf ? RC_PAPER : RC_LIVE, st0 = Y.net >= 0 ? 'ok' : 'bad', out = Y.bills + Y.spend + Y.out, ess = ESS_CATS.reduce((v, c) => v + num(Y.cats[c]), 0);
   const big = (label, v, sub) => `<div class="bk"><span class="bl">${label}</span><b>${v}</b><small>${sub}</small></div>`;
   const li = (bad, t) => `<li class="${bad ? 'warn' : 'ok'}"><span class="bi">${bad ? '!' : '✓'}</span>${t}</li>`;
+  const cardUp = Y.start && Y.end ? Y.end.card - Y.start.card : null;
+  const why = `${Y.net >= 0 ? `${m0(Y.net)} more came in than went out` : `${m0(-Y.net)} more went out than came in`}${cardUp != null && Math.abs(cardUp) >= 1 ? `${(cardUp > 0) === (Y.net >= 0) ? ', but' : ', and'} the card ${cardUp > 0 ? 'went up' : 'came down'} ${m0(Math.abs(cardUp))} since ${dshort(pd(Y.start.d))}` : ''}.`;
+  const parts = [
+    {k: 'ywhere', t: 'Where it went', s: m0(out), body: donutHTML([{label: 'Bills and debts', v: Y.bills, c: C.s1}, {label: 'Shop, cigarettes, drinks', v: ess, c: C.s2}, {label: 'Other purchases', v: Y.spend - ess, c: C.s3}, {label: 'To a personal account', v: Y.out, c: C.s4}], {big: m0(out), small: 'out'}, C, 'Where the money went')},
+    {k: 'yrules', t: 'Our rules', s: Y.rules.slips || Y.decisions.without ? `${Y.rules.slips} slip${Y.rules.slips === 1 ? '' : 's'}` : 'all kept', bad: !!(Y.rules.slips || Y.decisions.without), body: `<ul class="bheads">${li(Y.rules.slips, `${Y.rules.slips} slip${Y.rules.slips === 1 ? '' : 's'}`)}${li(Y.rules.unexplained, `${m0(Y.rules.unexplained)} we couldn’t explain`)}${li(Y.rules.pocket, `${m0(Y.rules.pocket)} from the Bills Pocket card`)}${li(Y.decisions.without, `${Y.decisions.together} decided together, ${Y.decisions.without} without Rory`)}</ul>`},
+    {k: 'ytax', t: 'Tax year', s: 'for reference', wide: true, body: `<ul class="bheads">${li(false, `Thiago: ${m0(Y.tax.thiago)} Illness Benefit (the Department tells Revenue)`)}${li(false, `Rory: ${m0(Y.tax.rory)} pay, after tax`)}${li(false, `Health: ${m0(Y.tax.health)}, about ${m0(Y.tax.likely)} likely to count`)}${li(false, `From mid-January: each of us opens his Preliminary End of Year Statement in myAccount`)}</ul><p class="bmut bsmall">For reference, not tax advice.</p>`}];
   return `<div class="board">
-    <div class="bhead"><div><span class="bl">Week by Week · our year</span><h2>${Y.y}${Y.done ? '' : ' so far'}</h2></div><div class="bverdict ${st0}"><span>${st0 === 'ok' ? '✓' : '✕'}</span>${st0 === 'ok' ? 'In the black' : 'In the red'} ${m0(Math.abs(Y.net))}</div></div>
+    <div class="bhead"><div><span class="bl">Hi Rory · here’s our year</span><h2>${Y.y}${Y.done ? '' : ' so far'}</h2></div><div class="bverdict ${st0}"><span>${st0 === 'ok' ? '✓' : '✕'}</span>${st0 === 'ok' ? 'In the black' : 'In the red'} ${m0(Math.abs(Y.net))}</div></div>
+    <p class="bwhy ${cardUp != null && cardUp > 0 ? 'warn' : st0}">${esc(why)}</p>
     <div class="bkpis">${big('Money in', m0(Y.in), 'pays, refunds, money added')}${big('Money out', m0(out), 'bills, debts, purchases')}${big('Card owes', Y.end ? m0(Y.end.card) : '—', Y.start ? `from ${m0(Y.start.card)}` : '')}${big('Emergency fund', Y.end ? m0(Y.end.ef) : '—', Y.start ? `from ${m0(Y.start.ef)}` : '')}</div>
     ${Y.months.length ? `<section class="bcard wide"><h3>Each month <span class="bh">more in than out is green</span></h3><div class="chartwrap">${resultColsSVG(Y.months.map(x => ({a: pd(`${x.m}-01`), v: x.partial ? null : x.end, proj: x.cur})), C)}</div></section>` : ''}
-    <div class="bgrid"><section class="bcard"><h3>Where it went</h3>${donutHTML([{label: 'Bills and debts', v: Y.bills, c: C.s1}, {label: 'Shop, cigarettes, drinks', v: ess, c: C.s2}, {label: 'Other purchases', v: Y.spend - ess, c: C.s3}, {label: 'To a personal account', v: Y.out, c: C.s4}], {big: m0(out), small: 'out'}, C, 'Where the money went')}</section>
-      <section class="bcard"><h3>Our rules</h3><ul class="bheads">${li(Y.rules.slips, `${Y.rules.slips} slip${Y.rules.slips === 1 ? '' : 's'}`)}${li(Y.rules.unexplained, `${m0(Y.rules.unexplained)} we couldn’t explain`)}${li(Y.rules.pocket, `${m0(Y.rules.pocket)} from the Bills Pocket card`)}${li(Y.decisions.without, `${Y.decisions.together} decided together, ${Y.decisions.without} without Rory`)}</ul></section></div>
-    <section class="bcard wide"><h3>Tax year <span class="bh">for reference, not tax advice</span></h3><ul class="bheads">${li(false, `Thiago: ${m0(Y.tax.thiago)} Illness Benefit (the Department tells Revenue)`)}${li(false, `Rory: ${m0(Y.tax.rory)} pay, after tax`)}${li(false, `Health: ${m0(Y.tax.health)}, about ${m0(Y.tax.likely)} likely to count`)}${li(false, `From mid-January: each of us opens his Preliminary End of Year Statement in myAccount`)}</ul></section>
+    ${forPdf ? `<div class="bgrid">${bsec(parts[0], true)}${bsec(parts[1], true)}</div>${bsec(parts[2], true)}` : `<span class="bl">The details · tap a line to open it</span>${parts.map(x => bsec(x, false)).join('')}`}
     <p class="bfoot">${Y.from.slice(5) !== '01-01' ? `Counted from ${dlong(pd(Y.from))}, when we started. ` : ''}${forPdf ? `Made ${dlong(today())} · every number comes from our Week by Week system` : ''}</p>
   </div>`;
 }
@@ -6919,7 +6943,7 @@ document.addEventListener('input', e => {
   (S.f[form] ||= {})[k] = val;
   if (t.tagName === 'SELECT' || t.type === 'checkbox' || form === 'check' || form === 'what' || form === 'chk' || form === 'bal' || form === 'bill' || form === 'kl' || form === 'ln' || form === 'wi' || form === 'pe' || form === 'vbf' || form === 'mv' || form === 'cmp' || form === 'cmpmin' || form.startsWith('cp_') || (form === 'spend' && S.f.spend && S.f.spend.split && /^(amount|s[A-Z])/.test(k))) sched();
 });
-document.addEventListener('toggle', e => { if (e.target.dataset && e.target.dataset.fold) (S.eOpen ||= {})[e.target.dataset.fold] = e.target.open; if (e.target.classList && e.target.classList.contains('bmore')) S.detailsOpen = e.target.open; if (e.target.id === 'wishForm') S.wishOpen = e.target.open; }, true);
+document.addEventListener('toggle', e => { if (e.target.dataset && e.target.dataset.fold) (S.eOpen ||= {})[e.target.dataset.fold] = e.target.open; if (e.target.id === 'wishForm') S.wishOpen = e.target.open; }, true);
 document.addEventListener('change', e => {   // controls whose action runs when their value changes (a tick, a choice from a list)
   const t = e.target, a = t.dataset && t.dataset.act;
   if (a === 'wkToggle'){ const ws = t.dataset.w || (S.tab === 'report' && S.reportWeek) || iso(weekStartOf(today())); weekUpdate(ws, {transfers: {[t.dataset.k]: t.checked}}); }

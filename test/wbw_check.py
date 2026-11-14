@@ -90,6 +90,7 @@ with sync_playwright() as p:
     pg.route('**/*', lib_route)
     ev = pg.evaluate; w = lambda ms=400: pg.wait_for_timeout(ms)
     view = lambda: ev("() => document.getElementById('view').innerText")
+    rview = lambda: ev("() => { document.querySelectorAll('#view details').forEach(d => d.open = true); return document.getElementById('view').innerText; }")   # Rory's report: each part of the details is one line that opens; read it all open
     def load(t):
         pg.clock.set_fixed_time(iso(t)); pg.goto('file://' + TEST); pg.wait_for_timeout(1000)
     def at(t): pg.clock.set_fixed_time(iso(t)); ev("() => render()"); w(150)
@@ -262,11 +263,25 @@ with sync_playwright() as p:
     check('Joint tile: always the money really in the Joint now; before payday what will be free after it, after payday what the shop still needs and what is free (or short), on Today and in Rory’s report', jt['ok'] and jt['rory'], jt)
     check('System (cleaner): the self-check stays; Claude’s check is one line with the detail folded; only ideas waiting show, keeping their number; What’s new folded', sy['one'] and sy['three'] and not sy['built'] and sy['rowHidden'] and sy['newsFolded'] and sy['selfCheck'] and sy['noIdeas'], sy)
     ev("() => render()")
-    ev("() => { S.canWrite = false; render(); }"); rv = view()
+    ev("() => { S.canWrite = false; render(); }"); rv = rview()
     rfit = ev(PROBE); check("Rory's view fits the phone screen", not rfit, rfit[:8])
     check("Rory's view: the report only, no forms (but the box for his own answers and his notification choices)", not ev("() => [...document.querySelectorAll('#view input, #view select')].some(x => !x.closest('.cmpans, .ntf'))") and not any(s in rv for s in BAD))
     if A.shots: pg.screenshot(path=os.path.join(A.shots, 'rory.png'), full_page=True)
     ev("() => { S.canWrite = true; S.tab = 'week'; render(); }")
+    # Rory's report, friendly (asked by Rory, 14 Nov 2026): the answer first, only what matters on page 1, every part of the details one line that opens with a tap; the PDF keeps it all open
+    rr = ev("""() => { S.canWrite = false; S.tab = 'week'; S.eOpen = {}; render(); const V = document.getElementById('view'), B = V.querySelector('.board'), tx = B.innerText;
+        const folds = [...V.querySelectorAll('.bdetail details.bfold')], ws = weekStartOf(today()), D = reportData(ws), owe = potOwed('bills').owe;
+        const pdf1 = reportBoard(ws, true, D), pdf2 = reportDetails(ws, true, D), tmp = document.createElement('div'); tmp.innerHTML = pdf1 + pdf2;
+        const r = {why: !!B.querySelector('.bwhy') === (trendLight(D.td, D.sig).st !== 'idle'), kpis: B.querySelectorAll('.bk').length, heads: B.querySelectorAll('.bheads li').length - B.querySelectorAll('.bcard:not(:has(.bnext)) h3 + .bheads li').length + B.querySelectorAll('.bgrid .bheads li').length,
+          headsN: [...B.querySelectorAll('.bgrid .bcard')].find(c => /Heads-up/.test(c.innerText)).querySelectorAll('li').length, next: /Next 7 days/.test(tx), owe: /What we owe/.test(tx), planLine: /Our plan/.test(tx) && /step \\d of 6/.test(tx),
+          oweShown: owe <= .005 || tx.includes('still to put back in the Bills Pocket'), noGrid: !V.querySelector('.bsteps'), nFolds: folds.length, closed: folds.every(d => !d.open),
+          titled: folds.every(d => d.querySelector('summary b') && d.querySelector('summary b').textContent.trim().length > 2), ntf: !S.ntf || (!!V.querySelector('details.bfold.ntf') && V.querySelector('details.bfold.ntf').open === (S.ntf.state !== 'on')),
+          pdfOpen: !tmp.querySelector('details') && /Money moves/.test(tmp.innerText) && /Purchases/.test(tmp.innerText) && /Each month’s money/.test(tmp.innerText)};
+        S.canWrite = true; render(); return r; }""")
+    check("Rory's report: the verdict and why first, the four numbers, at most 3 heads-up (money owed back to the Bills Pocket always there), the next 7 days, what we owe and the plan in one line; every detail one line that opens (closed at first; notifications open only while they're off); the PDF has it all open", rr['why'] and rr['kpis'] == 4 and rr['headsN'] <= 3 and rr['next'] and rr['owe'] and rr['planLine'] and rr['oweShown'] and rr['noGrid'] and rr['nFolds'] >= 6 and rr['closed'] and rr['titled'] and rr['ntf'] and rr['pdfOpen'], rr)
+    ry = ev("""() => { S.canWrite = false; S.f.rory = {tab: 'year', y: ''}; S.eOpen = {}; render(); const V = document.getElementById('view'), r = {why: !!V.querySelector('.bwhy'), folds: V.querySelectorAll('details.bfold').length, closed: [...V.querySelectorAll('details.bfold')].every(d => !d.open)};
+        S.f.rory = {tab: 'week', y: ''}; S.canWrite = true; render(); return r; }""")
+    check("Rory's year: one plain sentence first, the details one line each that opens", ry['why'] and ry['folds'] == 3 and ry['closed'], ry)
     if A.lib:
         try:
             pg.click('button[data-act="pdf"]', timeout=5000)
@@ -588,14 +603,14 @@ with sync_playwright() as p:
         q = ev("() => { const c = " + K + "; return {asked: !!(c.rory && c.rory.asked), plan: c.rory && c.rory.planName, log: S.changelog.some(x => x.step === 'ask' && x.cmp === c.id)}; }")
         ws_ = "weekStartOf(today())"
         hu = ev(f"() => headsUp({ws_}, reportData({ws_}), true).map(x => x.t)"); td = ev("() => todoList().map(x => x.txt)")
-        ev("() => { S.canWrite = false; render(); }"); rv = view(); rf = ev(PROBE); ev("() => { S.canWrite = true; S.tab = 'plan'; S.sub.plan = 'compare'; render(); }")
+        ev("() => { S.canWrite = false; render(); }"); rv = rview(); rf = ev(PROBE); ev("() => { S.canWrite = true; S.tab = 'plan'; S.sub.plan = 'compare'; render(); }")
         check('Compare: "Ask Rory" puts the question at the top of his report, in the heads-up and in History, and the To do list waits for his answer', q['asked'] and q['plan'] == 'Family' and q['log'] and 'Thiago is asking you' in rv and 'Kit Plus · Family' in rv and any(t.startswith('Thiago asks') for t in hu) and any('Waiting for Rory' in t for t in td) and not rf, {'q': q, 'hu': hu[:3], 'fit': rf[:4]})
         cid0 = ev("() => " + K + ".id")
         r0 = rory_answer('compare', cid0, 'yes', '')
         check('Compare: Rory’s answer needs his words', not ev("() => (cmpRory(" + K + ") || {}).answer") and 'a few words' in (r0['err'] or ''), r0['err'])
         ra = ev("async () => { const c = " + K + "; try { await S.db.collection('answers').add({kind: 'compare', ref: c.id, asked: c.rory.asked, plan: c.rory.plan, answer: 'yes', said: 'Thiago typing'}); return 'saved'; } catch (e) { return e.code; } }")
         check('Compare: Thiago can’t answer for Rory: the database refuses it', ra == 'invalid_argument' and not ev("() => (cmpRory(" + K + ") || {}).answer"), ra)
-        ev("() => { S.canWrite = false; S.canAnswer = true; render(); }"); rv = view(); rf = ev(PROBE); ev("() => { S.canWrite = true; S.canAnswer = false; S.tab = 'plan'; S.sub.plan = 'compare'; render(); }")
+        ev("() => { S.canWrite = false; S.canAnswer = true; render(); }"); rv = rview(); rf = ev(PROBE); ev("() => { S.canWrite = true; S.canAnswer = false; S.tab = 'plan'; S.sub.plan = 'compare'; render(); }")
         check('Compare: Rory sees Yes / No and a box for his own words, fitting the phone', 'Your answer, in your words' in rv and 'Only your account can answer' in rv and not rf, rf[:4])
         rory_answer('compare', cid0, 'yes', 'Fine, Family only')
         check('Compare: Rory’s yes comes from his own account, in his words, and the database writes it in History', ev("() => cmpRory(" + K + ").answer") == 'yes' and ev("() => S.changelog.some(x => x.step === 'answer' && /from his own account/.test(x.text) && /Family only/.test(x.text))"))
@@ -610,7 +625,7 @@ with sync_playwright() as p:
         check('Compare: the weekly bills follow the choice', abs((n1 - n0) - (fam - today_m) * 12 / 52) < .05, f'{n0} -> {n1}')
         ev("() => { S.tab = 'money'; S.sub.money = 'bills'; render(); }"); vb = view()
         check('Bills: the replaced bills show as ended', 'Ended' in vb and not any(s in vb for s in BAD))
-        ev("() => { S.canWrite = false; render(); }"); rv = view()
+        ev("() => { S.canWrite = false; render(); }"); rv = rview()
         check("Compare stays out of Rory's report; the plan applied shows there like any bill", 'Compare plans' not in rv and 'Which one?' not in rv and 'We both agree' not in rv and 'Kit Plus · Family' in rv)
         ev("() => { S.canWrite = true; S.tab = 'plan'; S.sub.plan = 'compare'; render(); }")
         cid = ev("() => S.compare.find(c => c.name === 'Kit Plus').id"); act('cmpUndo', id=cid); act('cmpUndo', id=cid); w(500)
@@ -766,7 +781,7 @@ with sync_playwright() as p:
         # something about to expire: To do and Rory's report
         soon = (NOW + datetime.timedelta(days=10)).date().isoformat()
         ev(f"async () => {{ await S.db.doc('prep/p2milk').update({{have: 3, exp: '{soon}'}}); }}"); w()
-        ev("() => { S.canWrite = false; S.tab = 'week'; render(); }"); rv = view(); rfit = ev(PROBE); ev("() => { S.canWrite = true; render(); }")
+        ev("() => { S.canWrite = false; S.tab = 'week'; render(); }"); rv = rview(); rfit = ev(PROBE); ev("() => { S.canWrite = true; render(); }")
         check("Ready: food about to expire goes on the To do list and in Rory's report (his Ready card fits the phone)", any('UHT milk' in t and 'expires' in t for t in T()) and 'Ready for emergencies' in rv and 'UHT milk' in rv and not rfit, rfit[:4])
         # cash at home: waits for Rory; once agreed, a step moves emergency-fund money to cash at home without changing the month or the Joint
         if ev("() => prepAgreed()"): ev("async () => { await S.db.doc('config/prep').update({agreed: null}); }"); w()
@@ -798,7 +813,7 @@ with sync_playwright() as p:
         ev("async () => { const a = (S.prepCfg.alerts || []).filter(x => x.id !== 'kitwiki').concat([{id: 'kitmet', date: iso(today()), level: 'act', t: 'Kit test: Status Red wind warning for Wexford', url: 'https://www.met.ie/warnings'}]); await S.db.doc('config/prep').update({alerts: a}); }"); w()
         t0 = ev("() => todoList()[0].txt")
         ev("() => { S.tab = 'today'; render(); }"); vt = view(); tf = ev(PROBE)
-        ev("() => { S.canWrite = false; S.tab = 'week'; render(); }"); rv = view(); rfit = ev(PROBE); ev("() => { S.canWrite = true; render(); }")
+        ev("() => { S.canWrite = false; S.tab = 'week'; render(); }"); rv = rview(); rfit = ev(PROBE); ev("() => { S.canWrite = true; render(); }")
         check("Ready: an official warning to act on goes first on the To do list, shows on Today and in Rory's report, all fitting the phone", t0.startswith('Official warning: Kit test') and 'Kit test: Status Red' in vt and 'Kit test: Status Red' in rv and not tf and not rfit, [t0[:60], tf[:3], rfit[:3]])
         ev("async () => { await S.db.doc('config/prep').update({alerts: (S.prepCfg.alerts || []).filter(x => x.id !== 'kitmet')}); }"); w()
         # sources: only official ones can raise a warning; news from outside the list is hidden; a warning goes at its end time; old dates show the year
@@ -869,6 +884,7 @@ with sync_playwright() as p:
         L = ev(f"""async () => {{ const s1 = pd('{R['sat']}'), s0 = addDays(s1, -28);
             await ppSave('b:kitcharge:' + iso(s0), true, iso(s0)); const b1 = S.bills.find(x => x.id === 'kitcharge'), c1 = b1.charge;
             await ppSave('b:kitcharge:' + iso(s1), true, iso(s1)); const b2 = S.bills.find(x => x.id === 'kitcharge');
+            await new Promise(r => setTimeout(r, 400));
             return {{c1, c2: b2.charge, left: (b2.history || []).map(h => [h.due, h.date, h.left]), log: S.changelog.filter(x => /Kit charge: learned/.test(x.text || '')).map(x => [x.text, x.tell]),
               next: billDays(b2, addDays(s1, 28), addDays(s1, 32)).map(o => iso(o.d)), want: iso(addDays(s1, 28))}}; }}"""); w(400)
         check('When it’s charged: two weekend payments in a row that left on their day make it an any-day bill (one History line, nobody told), and the next one is expected on its day', L['c1'] == 'work' and L['c2'] == 'any' and all(h[2] == 'due' for h in L['left']) and len(L['log']) == 1 and not L['log'][0][1] and L['next'] == [L['want']], L)
@@ -1009,7 +1025,7 @@ with sync_playwright() as p:
             rory: prepAlerts('home').map(a => a.t), heads: headsUp(weekStartOf(today()), reportData(weekStartOf(today())), true).map(x => x.t), m: [flow().free, pocketStart().v, jointShow(weekStartOf(today())).v]})""")
         check('Ready away (the UK, set by hand): its official warning shows and goes on the To do list, a news "act" stays hidden, home warnings stay, and History says so', away['w'] and away['w']['country'] == 'GB' and away['w']['by'] == 'hand' and away['log'] and 'Kit UK warning' in away['mine'] and 'Kit home warning' in away['mine'] and 'Kit UK news act' not in away['mine'] and any('in the UK' in t for t in away['todo']) and 'The UK' in v and '999 or 112' in v and not fit, {k: away[k] for k in ['w', 'mine', 'todo']})
         check('Away from home: Rory’s report keeps the home warnings only, and no money number changes', 'Kit UK warning' not in away['rory'] and 'Kit home warning' in away['rory'] and not any('Kit UK' in t for t in away['heads']) and all(abs(a - b) < .005 for a, b in zip(m0, away['m'])), {'rory': away['rory'], 'm0': m0, 'm': away['m']})
-        ev("() => { S.canWrite = false; render(); }"); rv = view(); ev("() => { S.canWrite = true; render(); }")
+        ev("() => { S.canWrite = false; render(); }"); rv = rview(); ev("() => { S.canWrite = true; render(); }")
         check('Away from home: Rory’s view has no country switch and no warning from the other country', 'Kit UK' not in rv and 'Where we are' not in rv)
         ev("""async () => { const c = S.prepCfg || {}; await S.db.doc('config/prep').update({alerts: (c.alerts || []).concat([{id: 'kw5', date: iso(today()), level: 'act', t: 'Kit Japan warning', url: 'https://www.jma.go.jp/kit', what: 'test', country: 'JP'}])}); }"""); w(300)
         ev("() => { S.tab = 'plan'; S.sub.plan = 'ready'; render(); }"); pick('prepWhere', 'JP'); w(400)
@@ -1041,7 +1057,7 @@ with sync_playwright() as p:
         big = wish('Kit headphones', th + 30); v0 = vd(big)
         check('Wishlist: a want over the limit waits for Rory’s yes, and the question is in History', v0['v'] == 'Waiting for Rory' and ev(f"() => S.changelog.some(x => x.step === 'ask' && x.wish === '{big}')"), v0)
         hu = ev("() => headsUp(weekStartOf(today()), reportData(weekStartOf(today())), true).map(x => x.t)")
-        ev("() => { S.canWrite = false; S.canAnswer = true; render(); }"); rv = view(); rf = ev(PROBE); ev("() => { S.canWrite = true; S.canAnswer = false; render(); }")
+        ev("() => { S.canWrite = false; S.canAnswer = true; render(); }"); rv = rview(); rf = ev(PROBE); ev("() => { S.canWrite = true; S.canAnswer = false; render(); }")
         check('Wishlist: Rory sees it at the top of his report, with Yes / No, in the heads-up, fitting the phone', 'Thiago is asking you' in rv and 'Kit headphones' in rv and 'Your answer, in your words' in rv and any('Kit headphones' in t for t in hu) and not rf, {'hu': hu[:3], 'fit': rf[:4]})
         small = wish('Kit socks', max(1, th - 5)); v1 = vd(small)
         check('Wishlist: a want under the limit works as before (Rory knows, no question)', v1['v'] != 'Waiting for Rory' and not ev(f"() => S.changelog.some(x => x.step === 'ask' && x.wish === '{small}')"), v1)
@@ -1114,7 +1130,7 @@ with sync_playwright() as p:
         check('Notifications: blocked in the iPhone’s Settings, the card says where to turn them on', 'Settings → Notifications → Week by Week' in view() and 'Turn on for this phone' not in view())
         ev("() => { window.__push.permission = 'default'; window.__push.sub = null; }")
         # Rory's phone, at the bottom of his report
-        ev("() => { window.__as = 'viewer'; S.canWrite = false; S.f.ntf = ntfForm(S.ntf.prefs); S.ntf.state = 'off'; render(); }"); rv = view()
+        ev("() => { window.__as = 'viewer'; S.canWrite = false; S.f.ntf = ntfForm(S.ntf.prefs); S.ntf.state = 'off'; render(); }"); rv = rview()
         kinds = ['Thiago is asking you', 'Decisions, and anything decided without you', 'Purchases and card charges', 'The shop, cigarettes and drinks', 'Bills Pocket, Vault or emergency fund used', 'Bills paid, transfers and money added', 'Anything changed, undone or deleted', 'The weekly report']
         rl = rv.lower()   # his report's design shows the labels in capitals
         check('Notifications: Rory’s card at the bottom of his report, with his eight kinds', 'notifications' in rl and all(k.lower() in rl for k in kinds) and 'rory’s answers' not in rl, {'missing': [k for k in kinds if k.lower() not in rl], 'tail': rv[-500:]})
@@ -1234,7 +1250,7 @@ with sync_playwright() as p:
         ev(f"() => {{ S.spending = S.spending.concat([{{id: 'kity', date: '{y}-12-20', what: 'Kit late receipt', amount: 33.33, cat: 'Other', paidFrom: 'joint', who: 'both', kind: 'need', told: 'before'}}]); render(); }}")
         M = ev(f"() => {{ const A = yearShown({y}); return {{moved: A.moved, shownSpend: A.Y.spend, liveSpend: A.live.spend, note: document.getElementById('view').innerText.includes('Logged after {y} closed')}}; }}")
         check('Year: something logged after it closed never changes the closed report; the screen just says it was logged after', M['moved'] and M['note'] and abs(M['liveSpend'] - M['shownSpend'] - 33.33) < .01, M)
-        ev(f"() => {{ S.canWrite = false; S.f.rory = {{tab: 'year', y: '{y}'}}; render(); }}"); rv = view()
+        ev(f"() => {{ S.canWrite = false; S.f.rory = {{tab: 'year', y: '{y}'}}; render(); }}"); rv = rview()
         check('Year: Rory has two tabs (This week, Our year); his year tab shows the closed year in his own design', 'This week' in rv and 'Our year' in rv and f'{y}' in rv and 'so far' not in rv.split('Money in')[0] and ev("() => !!document.querySelector('#view .board .bkpis')"), rv[:300])
         ev("() => { S.f.rory = {tab: 'week', y: ''}; render(); }")
         check('Year: Rory’s week tab is his weekly report as before, with a Download PDF button', ev("() => !!document.querySelector('#view .board') && !!document.querySelector('#view [data-act=pdf]')"))
@@ -1288,7 +1304,7 @@ with sync_playwright() as p:
             efSeries = () => ({...E0, amount: 280}); r.cashLow = cashPlan().open; return r; }""")
         check('Ready follows the money: with the week’s plan fitting, no tighten week and €400 in the fund, the cash step opens (and the To do asks for it when due), the 72-hour kit opens, the week’s kit waits for it; with €280 the fund would drop under €250, so it waits', U['cashOpen'] and (U['todoCash'] or not U['due']) and U['k2'] and U['k3'] == U['k2done'] and not U['cashLow'], U)
         load(NOW)
-        ev("() => { S.canWrite = false; render(); }"); rv = view(); ev("() => { S.canWrite = true; render(); }")
+        ev("() => { S.canWrite = false; render(); }"); rv = rview(); ev("() => { S.canWrite = true; render(); }")
         check('Rory’s report says what the cash at home waits for', 'Cash at home' not in rv or 'waits until' in rv or 'rule 8' in rv, rv[rv.find('Cash at home'):rv.find('Cash at home') + 160] if 'Cash at home' in rv else '')
     step('readygate', f_readygate)
 
