@@ -776,6 +776,7 @@ body.sheet-open{overflow:hidden}
 .billamt b{color:var(--ink);font-weight:600}
 .ios-row .dot.bill{background:var(--accent)} .ios-row .dot.bill.idle{background:var(--rule)}
 .bbar.tall{height:12px}
+.ckey.ends{justify-content:space-between}
 .weeknav.mid{justify-content:center}
 .stack.g10{gap:10px}
 .chk.multi{gap:10px;align-items:flex-start}
@@ -4260,16 +4261,20 @@ function enNextPanel(F){   // Money → Electricity: the next bill, and whether 
     ${F.staleDays != null && F.staleDays > 8 ? `<p class="banner mt12">The last reading is ${F.staleDays} days old. Add this week’s from the Energia app for a sharper forecast.</p>` : !F.readings.length ? '<p class="banner mt12">No readings yet: the forecast uses the last bill’s use per day. Add this week’s from the Energia app.</p>' : ''}
     <div class="mt12">${ready}</div></section>`;
 }
-function enMonthsPanel(F){   // the bill period, month by month, as the Energia app shows it
-  const t = today(), MS = enMonths(F), cur = MS.find(x => x.mk === iso(t).slice(0, 7)) || null;
-  return `<section class="panel"><header><h2>The bill, month by month</h2><span class="mut fs85">The app shows one month at a time; the bill covers about two</span></header>
-    ${cur ? `<div class="gtiles">
-      <div class="gt"><span class="label">${esc(cur.name)} so far</span><b>${cur.hasReading ? `${cur.soFar.toFixed(1)} kWh` : '—'}</b><small>${cur.hasReading ? `1–${cur.upTo.getDate()} ${esc(cur.name.slice(0, 3))}${cur.eur ? ` · ${money(cur.eur)} in the app` : ''}` : 'no reading yet this month'}</small></div>
-      <div class="gt"><span class="label">${esc(cur.name)}, whole month</span><b>${Math.round(cur.monthKwh)} kWh</b><small>about ${money(cur.monthCost)} at our tariff</small></div></div>` : ''}
-    <div class="kv mt12">${MS.map(x => `<span>${esc(x.name)} <small class="mut">(${(x.m < F.start ? F.start : x.a).getDate()}${x.z.getDate() !== (x.m < F.start ? F.start : x.a).getDate() ? `–${dshort(x.z)}` : ` ${esc(x.name.slice(0, 3))}`} in this bill)</small></span><span>${x.m > enMonthStart(t) && !x.hasReading ? `about ${Math.round(x.inKwh)} kWh in this bill` : `${x.final ? `${x.soFar.toFixed(1)} kWh, final` : x.hasReading ? `${x.soFar.toFixed(1)} kWh so far → ${Math.round(x.monthKwh)} kWh` : `about ${Math.round(x.monthKwh)} kWh`}${Math.abs(x.inKwh - (x.final ? x.soFar : x.monthKwh)) >= 1 ? ` · ${Math.round(x.inKwh)} kWh in this bill` : ''}`}</span>`).join('')}
-      <span><b>This bill, ${dshort(F.start)} – ${dshort(F.end)}</b></span><span><b>${F.used.toFixed(1)} kWh so far → about ${Math.round(F.kwh)} kWh</b></span>
-      <span><b>Estimated bill</b></span><span><b>${money(F.cost)}</b> (${money(F.costLow)} – ${money(F.costHigh)}), taken around ${dshort(F.payDate)}</span></div>
-    ${enSuspect().length ? `<p class="banner mt12">${enSuspect().map(x => `The ${dshort(pd(x.r.upTo))} reading (${num(x.r.kwh)} kWh) is ${x.rate.toFixed(0)} kWh a day: it looks like last month’s total saved as ${enMonth(pd(x.r.upTo))}. Delete it and save it again with the right month.`).join(' ')}</p>` : ''}
+function enMonthsPanel(F){   // the bill period, month by month, as the Energia app shows it: the bill first, then one tidy row per month (its numbers one tap away)
+  const t = today(), MS = enMonths(F), pct = F.kwh > 0 ? Math.max(1, Math.min(100, F.used / F.kwh * 100)) : 0;
+  const rowOf = x => { const a = x.m < F.start ? F.start : x.a, rng = x.z.getDate() !== a.getDate() ? `${a.getDate()}–${dshort(x.z)}` : dshort(x.z), soon = x.m > enMonthStart(t) && !x.hasReading;
+    const sub = x.final ? `${rng} · final` : x.hasReading ? `${x.soFar.toFixed(1)} kWh to ${dshort(x.upTo)}` : `${rng} · ${soon ? 'to come' : 'no reading'}`;
+    const whole = x.final ? `${x.soFar.toFixed(1)} kWh, final` : `about ${Math.round(x.monthKwh)} kWh`;
+    return taxRow(x.final ? 'ok' : x.hasReading ? 'bill' : 'idle', esc(x.name), sub, `${x.final ? '' : '≈ '}${Math.round(x.inKwh)} kWh`,
+      `<div class="kv"><span>Days in this bill</span><span>${rng}</span><span>In this bill</span><span>${Math.round(x.inKwh)} kWh</span><span>Whole month</span><span>${whole}</span><span>At our tariff</span><span>about ${money(x.monthCost)}</span>${x.eur ? `<span>In the Energia app</span><span>${money(x.eur)}</span>` : ''}</div>`); };
+  return `<section class="panel"><header><h2>The bill, month by month</h2><span class="mut fs85">${dshort(F.start)} – ${dshort(F.end)}</span></header>
+    <div class="bighead"><b>${money(F.cost)}</b><span class="mut">around ${dshort(F.payDate)} · ${money(F.costLow)} – ${money(F.costHigh)}</span></div>
+    <span class="bbar tall"><i class="bgs1" style="width:${pct.toFixed(1)}%"></i></span>
+    <div class="ckey ends"><span>${F.used.toFixed(1)} kWh so far</span><span>about ${Math.round(F.kwh)} kWh</span></div>
+    <div class="ios-list">${MS.map(rowOf).join('')}</div>
+    <p class="mut fs85">An estimate from the readings. The Energia app shows one month at a time; the bill covers about two. Tap a month for its numbers.</p>
+    ${enSuspect().length ? `<p class="banner">${enSuspect().map(x => `The ${dshort(pd(x.r.upTo))} reading (${num(x.r.kwh)} kWh) is ${x.rate.toFixed(0)} kWh a day: it looks like last month’s total saved as ${enMonth(pd(x.r.upTo))}. Delete it and save it again with the right month.`).join(' ')}</p>` : ''}
   </section>`;
 }
 function enReadForm(){   // this week's reading from the Energia app (Thiago only)
@@ -5551,7 +5556,7 @@ function cardIntPanel(){
 }
 
 /* ---------- system health: the page checks itself every time it opens; Claude runs the full check every Monday ---------- */
-const APP_VERSION = '2026.11.14-2';
+const APP_VERSION = '2026.11.14-3';
 function selfCheck(){   // cheap checks on the data, run on every open: things that don't fit, and the weekly tasks that should have run
   const key = `${S._rt}|${iso(today())}`; if (S._hc && S._hc.k === key) return S._hc.v;
   const items = [], t = today(), add = (st2, area, txt) => items.push({st: st2, area, t: txt});

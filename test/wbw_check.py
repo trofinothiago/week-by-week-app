@@ -508,6 +508,16 @@ with sync_playwright() as p:
         ev("() => { S.tab = 'money'; S.sub.money = 'energy'; render(); }")
         v = view()
         check('Electricity tab: month by month and the reading form with the month choice', 'The bill, month by month' in v and 'Which month does the app show?' in v and not any(s in v for s in BAD))
+        # the card reads answer first (14 Nov 2026, asked by Thiago): the estimated bill big, the period's kWh as a bar, one tidy row per month that opens its numbers
+        mb = ev("""() => { const sec = [...document.querySelectorAll('#view section.panel')].find(x => x.querySelector('h2') && x.querySelector('h2').textContent === 'The bill, month by month'); if (!sec) return null;
+            const F = enForecast(), MS = enMonths(F); sec.querySelectorAll('details').forEach(d => d.open = true);
+            const rows = [...sec.querySelectorAll('.ios-list > details > summary.ios-row')];
+            return {big: (sec.querySelector('.bighead > b') || {}).textContent, want: money(F.cost), bar: !!sec.querySelector('.bbar i'), rows: rows.length, months: MS.length,
+              ends: rows.map(r => r.querySelector('.end').textContent), names: rows.map(r => r.querySelector('.txt').firstChild.textContent), monthNames: MS.map(x => x.name),
+              bodies: [...sec.querySelectorAll('.rowbody .kv')].length, inline: [...sec.querySelectorAll('[style]')].filter(e => !e.matches('.bbar i')).length}; }""")
+        check('Electricity, the bill month by month: the estimated bill first, the period as a bar, one row per month (its kWh in this bill), its numbers one tap away, no fixed style="…"', mb and mb['big'] == mb['want'] and mb['bar'] and mb['rows'] == mb['months'] == mb['bodies'] and mb['names'] == mb['monthNames'] and all('kWh' in e for e in mb['ends']) and mb['inline'] == 0, mb)
+        pf = [x for x in ev(PROBE) if 'month' in x.lower() or 'kWh' in x or 'bill' in x.lower()]
+        check('Electricity, the bill month by month: fits the phone with every month opened', not pf, pf[:4])
     step('energy month by month', f_energy2)
 
     # ---- 8. change how a bill is paid, from a date ----
