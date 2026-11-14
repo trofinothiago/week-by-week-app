@@ -764,9 +764,11 @@ with sync_playwright() as p:
         ev("() => { S.f.ppag = {ag: 'yes', said: 'Grand, small steps'}; }"); act('prepAgree')
         dec = ev("() => weekDecisions(weekStartOf(today())).some(x => x.kind === 'ready' && x.rory === 'yes')")
         check("Ready: Rory's agreement is recorded in his words and shows in his Decisions card", ev("() => PC().agreed && PC().agreed.rory === 'yes' && PC().agreed.said === 'Grand, small steps'") and dec)
-        if num("efSeries().amount") < 60:
-            ev("() => { S.f.add = {date: iso(today()), amount: '100', to: 'ef', who: 'both', how: 'gift', note: 'kit'}; }"); ev("async () => { await addSave(); }"); w()
+        # the cash step itself, on a day the money allows it (Ready follows the money: the week's plan fits, no tighten week, the fund keeps €250 after the step)
+        if num("efSeries().amount") < 310:
+            ev(f"() => {{ S.f.add = {{date: iso(today()), amount: '{310 - num('efSeries().amount'):.2f}', to: 'ef', who: 'both', how: 'gift', note: 'kit'}}; }}"); ev("async () => { await addSave(); }"); w()
         first = datetime.datetime.fromisoformat(ev("() => PC().cash.first") + 'T10:00:00'); at(max(NOW, first))
+        ev("() => { const A0 = advisor, F0 = flow; advisor = () => ({...A0(), mode: 'steady'}); flow = () => ({...F0(), free: 20}); render(); }")
         e0, j0, m0 = num("efEstimate().amount"), num("jointStart().v"), num("(monthResult(today()) || {}).net || 0")
         due = any('Cash at home: take out' in t for t in T())
         act('prepCash')
@@ -1221,6 +1223,25 @@ with sync_playwright() as p:
                 check(f'Year: fits the phone, Thiago’s screen with everything open and Rory’s view ({wd} px, {"dark" if dark else "light"})', not f1 and not f2, (f1 + f2)[:6])
         pg.set_viewport_size({'width': 390, 'height': 900}); pg.emulate_media(color_scheme='light')
     step('year', f_year)
+
+    # ---- Ready follows the money (decided with Rory, 13 Nov 2026): the kit states the rule itself ----
+    def f_readygate():
+        load(NOW)
+        R = ev("""() => { const A = advisor(), fl = flow(), tight = A.mode === 'tighten' || num(fl.free) < 0, cp = cashPlan(), ef = efSeries().amount, keep = num(PC().cash.keep) || 250, card = (cardState() || {bal: 0}).bal;
+            const wantCash = !tight && ef - cp.amt >= keep - .005, todoCash = todoList().some(x => x.act === 'prepCash');
+            S.tab = 'plan'; S.sub.plan = 'ready'; render(); const v = document.getElementById('view').innerText;
+            return {tight, cashOpen: cp.open, wantCash, todoCash, due: cp.due, k2: prepOpen(2, prepGate()).ok, k1: prepOpen(1, prepGate()).ok, k4: prepOpen(4, prepGate()).ok, card, first: v.indexOf('What we can do now'), ready: v.indexOf('Ready for emergencies')}; }""")
+        check('Ready follows the money: a cash step and kit purchases wait in a tighten week or while the week’s plan is short; the free steps never wait; staying connected waits for the card at €0', R['cashOpen'] == R['wantCash'] and R['k2'] == (not R['tight']) and R['k1'] and R['k4'] == (R['card'] <= .005) and (R['cashOpen'] or not R['todoCash']), R)
+        check('Ready opens with “What we can do now”, before everything else', 0 <= R['first'] < R['ready'], R)
+        # the same page with the money in order: the kit unlocks and the To do asks for the cash step
+        U = ev("""() => { const A0 = advisor(), F0 = flow(), E0 = efSeries(); advisor = () => ({...A0, mode: 'steady', allowance: 30}); flow = () => ({...F0, free: 20}); efSeries = () => ({...E0, amount: 400});
+            const cp = cashPlan(), r = {cashOpen: cp.open, todoCash: todoList().some(x => x.act === 'prepCash'), due: cp.due, k2: prepOpen(2, prepGate()).ok, k3: prepOpen(3, prepGate()).ok, k2done: prepStage(2).pct >= 100};
+            efSeries = () => ({...E0, amount: 280}); r.cashLow = cashPlan().open; return r; }""")
+        check('Ready follows the money: with the week’s plan fitting, no tighten week and €400 in the fund, the cash step opens (and the To do asks for it when due), the 72-hour kit opens, the week’s kit waits for it; with €280 the fund would drop under €250, so it waits', U['cashOpen'] and (U['todoCash'] or not U['due']) and U['k2'] and U['k3'] == U['k2done'] and not U['cashLow'], U)
+        load(NOW)
+        ev("() => { S.canWrite = false; render(); }"); rv = view(); ev("() => { S.canWrite = true; render(); }")
+        check('Rory’s report says what the cash at home waits for', 'Cash at home' not in rv or 'waits until' in rv or 'rule 8' in rv, rv[rv.find('Cash at home'):rv.find('Cash at home') + 160] if 'Cash at home' in rv else '')
+    step('readygate', f_readygate)
     step('ahead', f_ahead)
     br.close()
 

@@ -5155,6 +5155,18 @@ function cashHomeAt(di){
   for (const x of S.spending) if (x.paidFrom === 'cash' && pd(x.date) && x.date <= di) v -= num(x.amount);
   return Math.round(v * 100) / 100;
 }
+function prepGate(){   // what Ready can do now, from the money (decided with Rory, 13 Nov 2026): the advisor's mode, the week's plan, the emergency fund, the card
+  const fl = flow(), AD = fl.configured ? advisor() : null, short = fl.configured ? Math.max(0, -num(fl.free)) : 0, cs = cardState(), card = cs ? Math.max(0, cs.bal) : 0;
+  const why = [short > .005 ? {s: `the plan is ${m0(short)} a week short`, u: `the week’s plan fits again (now ${money(short)} short)`} : null, !AD || AD.mode === 'tighten' ? {s: 'a tighten week', u: 'the tighten weeks end'} : null].filter(Boolean);   // s: the short reason for a row; u: "waits until …" for the detail
+  return {spend: !why.length, why, wants: AD ? AD.allowance : 0, card, payoff: card > .005 ? (project(0) || {}).payoff : null, ef: efSeries().amount, keep: num(PC().cash.keep) || 250};
+}
+function prepOpen(n, G){   // a stage of the kit: can we spend on it now? (free steps always; the 72-hour kit and the week from the wants money, outside a tighten week; staying connected once the card is at €0)
+  if (n === 1) return {ok: true, t: 'free: do them now'};
+  if (n === 4) return G.card > .005 ? {ok: false, t: `waits for the AIB card at €0${G.payoff ? ` (about ${fMYL.format(G.payoff)})` : ''}`, u: `the AIB card is at €0${G.payoff ? ` (about ${fMYL.format(G.payoff)} at the weekly payment)` : ''}`} : prepStage(3).pct >= 100 ? {ok: true, t: 'through the wishlist and Compare, with Rory’s yes'} : {ok: false, t: 'after the week’s kit', u: 'the kit for a week is done'};
+  if (!G.spend) return {ok: false, t: `waits: ${G.why[0].s}`, u: G.why.map(x => x.u).join(' and ')};
+  if (n === 3 && prepStage(2).pct < 100) return {ok: false, t: 'after the 72-hour kit', u: 'the 72-hour kit is done'};
+  return {ok: true, t: `one item at a time from the wants money (${m0(G.wants)} this week)`};
+}
 function cashPlan(){
   const c = PC().cash, have = cashHomeAt(), tgt = num(c.target) || 200, step = num(c.step) || 50, every = Math.max(1, num(c.every) || 4), t = today();
   const ins = S.moves.filter(m => m.to === 'cash' && pd(m.date)).sort((a, b) => a.date.localeCompare(b.date)), last = ins[ins.length - 1];
@@ -5163,8 +5175,8 @@ function cashPlan(){
   if (have < tgt - .005){ next = last ? addDays(pd(last.date), every * 7) : (pd(c.first) || t); if (spent && next > t) next = t; }
   const amt = Math.round(Math.min(step, tgt - have) * 100) / 100, left = have < tgt - .005 ? Math.ceil((tgt - have) / step - 1e-9) : 0;
   const from = c.from === 'joint' ? 'joint' : 'ef', efAcc = efSeries().amount;
-  const can = from !== 'ef' || efAcc >= amt - .005;
-  return {have, tgt, step, every, amt, next, left, doneBy: next ? addDays(next, Math.max(0, left - 1) * every * 7) : null, agreed: prepAgreed(), from, can, efAcc, due: prepAgreed() && !!next && next <= t, ins};
+  const can = from !== 'ef' || efAcc >= amt - .005, G = prepGate(), keep = G.keep, wait = [...G.why, from === 'ef' && efAcc - amt < keep - .005 ? {s: `the fund keeps ${m0(keep)} first`, u: `the emergency fund can keep ${money(keep)} after a step (it has ${money(efAcc)})`} : null].filter(Boolean);
+  return {have, tgt, step, every, amt, next, left, doneBy: next ? addDays(next, Math.max(0, left - 1) * every * 7) : null, agreed: prepAgreed(), from, can, efAcc, due: prepAgreed() && !!next && next <= t, ins, keep, open: !wait.length, wait};
 }
 /* official updates: only from the sources on the list */
 function prepAlerts(scope = 'both'){   // home: Ireland (Rory's report); both: home plus the country Thiago is in (his Ready and To do)
@@ -5182,7 +5194,12 @@ function prepPower(){
 /* ---------- the screen ---------- */
 function vReady(){
   const P = prepNow(), cp = cashPlan(), al = prepAlerts(), why = prepWhy(), cfg = PC(), exp = prepExpiring(30), pw = prepPower(), t = today(), here = placeNow();
-  const chk = cfg.checkedAt ? dayDiff(localDay(cfg.checkedAt), t) : null;
+  const chk = cfg.checkedAt ? dayDiff(localDay(cfg.checkedAt), t) : null, G = prepGate();
+  const nowRow = (n, sub, end) => { const o = n ? prepOpen(n, G) : null, ok = n ? o.ok : cp.open; return `<div class="ios-row"><span class="dot ${ok ? 'ok' : 'idle'}"></span><span class="txt">${n ? esc(PREP_STAGE[n].n) : 'Cash at home'}<small>${esc(sub || o.t)}</small></span><span class="end">${end}</span></div>`; };
+  const now = `<section class="ios-sec"><h2>What we can do now <small>${G.spend ? 'the money allows it' : 'free steps only'}</small></h2><div class="ios-list">
+    ${[1, 2, 3, 4].filter(n => prepStage(n).pct < 100).map(n => nowRow(n, '', n === 1 ? `${prepStage(1).L.filter(x => prepFrac(x) >= 1).length} of ${prepStage(1).L.length}` : `≈ ${m0(prepStage(n).left)}`)).join('')}
+    ${cp.have < cp.tgt - .005 ? nowRow(0, cp.open ? `${m0(cp.amt)} every ${cp.every} weeks` : `waits: ${cp.wait[0].s}`, `${m0(cp.have)} of ${m0(cp.tgt)}`) : ''}
+  </div><p class="mut fs85 tnote">Ready follows the money: the bills, the shop and the card come first (decided together, 13 Nov 2026).</p></section>`;
   const head = `<section class="panel"><header><h2>Ready for emergencies</h2><span class="mut fs85">For the two of us · ${esc(cfg.county)}</span></header>
     <div class="verdict ${P.pct72 >= 100 ? 'ok' : P.pct72 >= 50 ? 'warn' : 'idle'}"><h3>${P.pct72 >= 100 ? '✓ We can manage 72 hours on our own' : `${P.pct72}% ready for 72 hours`}</h3><p>Working on: <b>${esc(PREP_STAGE[P.cur.n].n)}</b> (${P.cur.pct}%). ${esc(PREP_STAGE[P.cur.n].why)}</p></div>
     <div class="kv">${P.stages.map(s => `<span>${esc(PREP_STAGE[s.n].n)}<small>${s.left > .5 ? `about ${money(s.left)} still to buy` : s.n === 1 ? 'free' : 'all bought'}</small></span><span>${s.pct}%</span>`).join('')}<span>Cash at home<small>part of the emergency fund</small></span><span>${money(cp.have)} of ${money(cp.tgt)}</span></div>
@@ -5205,7 +5222,7 @@ function vReady(){
     <span>First year<small>kit and power station once, then the plan each month</small></span><span>about ${money(num(cfg.starlink.kit) + num((prepItems().find(x => x.key === 'station') || {}).cost) + pw.yearly)}</span></div>
     <p class="mut fs85">Why the Mini: it uses about half the power of the Standard dish, so the same battery keeps it going twice as long. No official guidance asks households for satellite internet: the radio and power banks in the 72-hour kit come first. Starlink’s plan goes through Compare, with Rory’s yes, like any new bill.</p>
     ${S.canWrite ? `<div class="actions"><button class="btn" data-act="prepCompare">Compare the Starlink plans</button></div>` : ''}</section>`;
-  return `<div class="stack">${head}${prepWhereHTML(here)}${al.some(a => a.level === 'act') ? news + whyP : ''}${exp.length ? `<section class="panel"><header><h2>Use it and replace it</h2></header><div class="ledger">${exp.map(e => `<div class="lrow"><span class="d">${e.dl < 0 ? 'Expired' : e.dl === 0 ? 'Today' : `In ${e.dl} days`}</span><span class="n"><b>${esc(e.x.name)}</b><small>${e.dl < 0 ? 'expired' : 'expires'} ${dshort(e.d)}: use it in the weekly shop and buy a new one</small></span>${S.canWrite ? `<button class="linkbtn" data-act="prepBuy" data-id="${esc(e.x.id)}">Replaced</button>` : ''}</div>`).join('')}</div></section>` : ''}
+  return `<div class="stack">${now}${head}${prepWhereHTML(here)}${al.some(a => a.level === 'act') ? news + whyP : ''}${exp.length ? `<section class="panel"><header><h2>Use it and replace it</h2></header><div class="ledger">${exp.map(e => `<div class="lrow"><span class="d">${e.dl < 0 ? 'Expired' : e.dl === 0 ? 'Today' : `In ${e.dl} days`}</span><span class="n"><b>${esc(e.x.name)}</b><small>${e.dl < 0 ? 'expired' : 'expires'} ${dshort(e.d)}: use it in the weekly shop and buy a new one</small></span>${S.canWrite ? `<button class="linkbtn" data-act="prepBuy" data-id="${esc(e.x.id)}">Replaced</button>` : ''}</div>`).join('')}</div></section>` : ''}
     ${stages}${cash}${sl}${prepMedHTML()}${prepPlanHTML()}${al.some(a => a.level === 'act') ? '' : news + whyP}
     <section class="panel"><header><h2>Where the information comes from</h2></header><p class="fs92"><b>Official, always first:</b> the European Commission and Council, ${esc(PLACES[HOME].sources)}, NATO and the UN; away from home, the official sources of the country we’re in (its government, weather service and civil protection${here.home ? '' : `; now ${esc(here.name)}: ${esc(here.sources)}`}). Only these can ask us to act or keep an eye on something.</p><p class="fs92"><b>News, for the background and the reasons:</b> centre-right and conservative outlets: The Telegraph, The Times, The Wall Street Journal, the Irish Independent, The Spectator, GB News, Fox News, the Washington Examiner, National Review and Gript. A news report is saved only when an official source backs up the facts.</p><p class="mut fs85">Never Wikipedia or any other site: anything else is hidden and the system check flags it. Claude checks every morning at 7.</p></section></div>`;
 }
@@ -5237,7 +5254,9 @@ function prepStageHTML(n){
     return `<div class="lrow prow${full ? ' done' : ''}"><span class="d"><span class="dot ${full ? 'ok' : have > 0 ? 'warn' : 'idle'}"></span> ${esc(state)}${num(x.cost) > 0 ? ` · ${money(x.cost)}` : ''}</span><span class="n"><b>${esc(x.name)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}${x.note ? `<small>${esc(x.note)}</small>` : ''}</span>${btns ? `<span class="pbtns">${btns}</span>` : ''}</div>${S.prepBuy === x.id ? prepBuyForm(x) : ''}`;
   };
   if (!s.L.length && !later.length) return '';
+  const o = prepOpen(n, prepGate());
   return `<section class="panel"><header><h2>${n}. ${esc(PREP_STAGE[n].n)}</h2><span class="mut fs85">${s.pct}%${s.cost > 0 ? ` · about ${money(s.cost)}` : ''}</span></header><p class="mut fs85">${esc(PREP_STAGE[n].why)}</p>
+    ${s.pct < 100 ? `<p class="fs90"><span class="chip ${o.ok ? 'ok' : 'idle'}">${o.ok ? 'Now' : 'Waits'}</span> ${esc(o.ok ? o.t.charAt(0).toUpperCase() + o.t.slice(1) : `Until ${o.u}`)}.</p>` : ''}
     <div class="ledger">${s.L.map(row).join('')}${later.map(row).join('')}</div></section>`;
 }
 function prepBuyForm(x){
@@ -5254,9 +5273,10 @@ function prepCashHTML(cp){
   return `<section class="panel"><header><h2>Cash at home</h2><span class="mut fs85">${money(cp.have)} of ${money(cp.tgt)}</span></header>
     <div class="kv"><span>Target<small>€70–€100 each is what the Netherlands, Austria and Ireland’s coming advice use; Sweden says a week’s shopping</small></span><span>${money(cp.tgt)} for 2</span>
     <span>How<small>${cp.from === 'joint' ? 'from the Joint account' : 'from the emergency fund: Our Savings → Joint, then the ATM'}, in €5, €10 and €20 notes plus some coins</small></span><span>${money(cp.step)} every ${cp.every} weeks</span>
-    <span>Next step${cp.next ? `<small>${cp.left} step${cp.left === 1 ? '' : 's'} left, done by ${dshort(cp.doneBy)}</small>` : ''}</span><span>${!cp.next ? '✓ Target reached' : !cp.agreed ? 'Waits for Rory' : dshort(cp.next)}</span></div>
+    <span>Next step${cp.next ? `<small>${cp.left} step${cp.left === 1 ? '' : 's'} left${cp.open ? `, done by ${dshort(cp.doneBy)}` : ''}</small>` : ''}</span><span>${!cp.next ? '✓ Target reached' : !cp.agreed ? 'Waits for Rory' : !cp.open ? 'Waits' : dshort(cp.next)}</span></div>
+    ${cp.next && cp.agreed && !cp.open ? `<p class="fs90">It waits until ${esc(cp.wait.map(x => x.u).join(', and '))}. The money comes first; then ${money(cp.amt)} every ${cp.every} weeks.</p>` : ''}
     <p class="mut fs85">It counts as part of the emergency fund and follows rule 8: real emergencies only. Revolut Standard gives 5 free ATM withdrawals or €200 a month, so one €50 withdrawal never costs a fee. Keep it in one known place, out of sight; home insurance often covers only a few hundred euro in cash.${cp.from === 'ef' && !cp.can ? ` The emergency fund has ${money(cp.efAcc)} now: the next step waits until it has ${money(cp.amt)}.` : ''}</p>
-    ${S.canWrite && cp.due && cp.can ? `<div class="actions"><button class="btn strong" data-act="prepCash">Done: ${money(cp.amt)} is at home</button></div>` : ''}
+    ${S.canWrite && cp.due && cp.can && cp.open ? `<div class="actions"><button class="btn strong" data-act="prepCash">Done: ${money(cp.amt)} is at home</button></div>` : ''}
     ${list.length || used.length ? `<div class="ledger">${list.map(m => `<div class="lrow"><span class="d">${dshort(pd(m.date))}</span><span class="n"><b>${esc(mvRoute(m))}</b>${m.note ? `<small>${esc(m.note)}</small>` : ''}</span><span class="a">${m.to === 'cash' ? '+' : '−'}${money(m.amount)}</span>${S.canWrite ? `<button class="linkbtn" data-act="mvDel" data-id="${esc(m.id)}">${S.confirmMv === m.id ? 'Tap again to undo' : 'Undo'}</button>` : ''}</div>`).join('')}${used.map(x => `<div class="lrow"><span class="d">${dshort(pd(x.date))}</span><span class="n"><b>Paid in cash: ${esc(x.what)}</b><small>rule 8: put it back with the next step</small></span><span class="a">−${money(x.amount)}</span></div>`).join('')}</div>` : ''}</section>`;
 }
 function prepMedHTML(){
@@ -5285,7 +5305,7 @@ function prepTodos(){
   for (const x of prepMeds().filter(x => num(x.have) < num(x.qty)).slice(0, 2)) out.push({st: 'warn', txt: `${WHO[x.who] || 'Medicine'}: ${x.name} has ${num(x.have)} days spare. Ask for the repeat prescription to keep ${num(x.qty)}.`, to: 'ready', btn: 'Open'});
   const cp = cashPlan();
   if (!prepAgreed() && S.prep.length) out.push({st: 'idle', txt: 'Ready: show Rory the emergency plan (kit for 2, cash at home) and record his answer.', to: 'ready', btn: 'Open'});
-  else if (cp.due && cp.can) out.push({st: 'warn', txt: `Cash at home: take out ${money(cp.amt)} in small notes (${cp.from === 'ef' ? 'Our Savings → Joint, then the ATM' : 'from the Joint account at the ATM'}). It stays part of the emergency fund.`, act: 'prepCash', id: '', btn: 'Done'});
+  else if (cp.due && cp.can && cp.open) out.push({st: 'warn', txt: `Cash at home: take out ${money(cp.amt)} in small notes (${cp.from === 'ef' ? 'Our Savings → Joint, then the ATM' : 'from the Joint account at the ATM'}). It stays part of the emergency fund.`, act: 'prepCash', id: '', btn: 'Done'});
   { const s1 = prepStage(1), nx = s1.L.find(x => prepFrac(x) < 1 && !x.auto); if (nx && prepAgreed()) out.push({st: 'idle', txt: `Ready, a free step: ${nx.name}.`, to: 'ready', btn: 'Open'}); }
   return out;
 }
@@ -5303,8 +5323,8 @@ function prepReport(ws, D, icon){
   if (!S.prep.length) return '';
   const P = prepNow(), cp = cashPlan(), exp = prepExpiring(14), al = prepAlerts('home').filter(a => a.level !== 'info').slice(0, 1);
   const rows = [
-    [P.pct72 >= 100 ? 'ok' : 'idle', `Kit: ${P.pct72}% ready for 72 hours`, `${PREP_STAGE[P.cur.n].n} next${P.cur.left > .5 ? ` · about ${money(P.cur.left)} to buy` : ''}`],
-    [cp.have >= cp.tgt - .005 ? 'ok' : 'idle', `Cash at home ${money(cp.have)} of ${money(cp.tgt)}`, 'part of the emergency fund, rule 8'],
+    [P.pct72 >= 100 ? 'ok' : 'idle', `Kit: ${P.pct72}% ready for 72 hours`, `${PREP_STAGE[P.cur.n].n} next: ${prepOpen(P.cur.n, prepGate()).t}`],
+    [cp.have >= cp.tgt - .005 ? 'ok' : 'idle', `Cash at home ${money(cp.have)} of ${money(cp.tgt)}`, cp.have >= cp.tgt - .005 || cp.open ? 'part of the emergency fund, rule 8' : `waits until ${cp.wait.map(x => x.u).join(' and ')}`],
     ...exp.map(e => ['warn', `${e.x.name}: ${e.dl < 0 ? 'expired' : 'use by'} ${dshort(e.d)}`, 'use it in the shop and replace it']),
     ...al.map(a => [a.level === 'act' ? 'bad' : 'warn', `Official: ${String(a.t).slice(0, 90)}`, prepHost(a.url)])
   ];
@@ -5362,7 +5382,7 @@ async function prepAction(a, b){
       S.err = ''; const said = String(f.said || '').trim();
       await prepCfgSet({agreed: {rory: f.ag, on: iso(today()), at, said}});
       await logChangeAg(f.ag, 'ready', `Ready plan: kit for 2, ${money(PC().cash.target)} cash at home${said ? ` (Rory: “${said}”)` : ''}`); S.f.ppag = {}; toast('Saved'); }
-    else if (a === 'prepCash'){ const cp = cashPlan(); if (!cp.due || !cp.can || !(cp.amt > 0)) { toast('No cash step today'); return; }
+    else if (a === 'prepCash'){ const cp = cashPlan(); if (!cp.due || !cp.can || !cp.open || !(cp.amt > 0)) { toast('No cash step today'); return; }
       const mid = 'mv' + Date.now() + Math.random().toString(36).slice(2, 6);
       await S.db.doc('moves/' + mid).set({date: iso(today()), from: cp.from, to: 'cash', amount: cp.amt, note: 'Cash at home (Ready plan), small notes', at, prep: true});
       await logChange('transfer', `Cash at home: ${money(cp.amt)} taken out from ${mvName(cp.from)}. Now ${money(cp.have + cp.amt)} at home; it stays part of the emergency fund (rule 8).`); toast(`${money(cp.amt)} at home`); }
@@ -5530,7 +5550,7 @@ function cardIntPanel(){
 }
 
 /* ---------- system health: the page checks itself every time it opens; Claude runs the full check every Monday ---------- */
-const APP_VERSION = '2026.11.13-4';
+const APP_VERSION = '2026.11.14';
 function selfCheck(){   // cheap checks on the data, run on every open: things that don't fit, and the weekly tasks that should have run
   const key = `${S._rt}|${iso(today())}`; if (S._hc && S._hc.k === key) return S._hc.v;
   const items = [], t = today(), add = (st2, area, txt) => items.push({st: st2, area, t: txt});
