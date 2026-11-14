@@ -1756,7 +1756,7 @@ function vBudget(){
   const head = `<section class="panel"><header><h2>This month</h2><span class="mut fs85">Income: Thiago ${money(incWeekly('thiago') * 52 / 12)} + Rory ${money(incWeekly('rory') * 52 / 12)} a month</span></header>
     <div class="bighead"><b>${pctTxt(now.pct)}</b><span>of our income is committed ${sigChip(stt)}</span><span class="mut">Free: <b class="mono">${money(now.free)}</b> a month · ${money(now.free * 12 / 52)} a week</span></div>
     <h3>Projected, the whole month</h3>${commitBar(now)}
-    <h3>Real so far · ${dshort(R.a)}–${dshort(R.z)}</h3><p class="mut fs85">Money in so far: <b class="mono">${money(R.got)}</b> of ${money(R.income)} (the pays ticked in Week, money added, refunds)</p>${commitBar(R, true)}
+    <h3>Real so far · ${dshort(R.a)}–${dshort(R.z)}</h3><p class="mut fs85">Our whole pay so far: <b class="mono">${money(R.got)}</b> of ${money(R.income)} · pays ticked, with what each of us keeps</p>${commitBar(R, true)}
     <p class="mut fs85">What really went out of the month’s income: bills on their dates, money put in the Vault, every purchase, loans and Klarna, the card payments, the emergency fund, and what each of us kept from the pays that came.</p>
     <p class="mut fs85">Committed means already promised: bills, Vaults, the weekly shop and cigarettes, loans, Klarna paid from the Joint account and the card payment. Under 65% is comfortable, 65–80% is tight, over 80% leaves no room for surprises. What each of you keeps is shown separately and isn’t counted as committed.</p></section>`;
   const fr = freedoms(pr);
@@ -3078,6 +3078,7 @@ function paydayRows(a, z){   // what each payday really brought into the Joint a
   }
   return out;
 }
+const sharedBuy = x => ['joint', 'card', 'bills'].includes(x.paidFrom) && !x.sched;   // a purchase from our shared money (pre-orders are counted by their card charge); the month result and the year use this one rule
 function flowRows(a, z, card0, opt = {}){ // money in and out of our shared accounts between a (exclusive) and z (inclusive)
   const s = st(), fl = flow();
   const inR = d => d && d > a && d <= z, rows = [], sIn = (x, stamp) => opt.sA ? stamp > opt.sA && stamp <= opt.sZ && !!pd(x.date) : inR(pd(x.date));   // between two money checks: by the time it was logged
@@ -3098,7 +3099,7 @@ function flowRows(a, z, card0, opt = {}){ // money in and out of our shared acco
       if (cc && !cc.estimated){ cc.list.forEach((c, i) => { const on = addDays(c.S, 1); if (inR(on) && !cardIntFor(iso(c.S))) add('bill', `Card interest on the ${dshort(c.S)} statement (estimate)`, -num(card0) * apr / 365 * (i ? dayDiff(cc.list[i - 1].S, c.S) : 30), on); }); }   // it reaches the card balance overnight after the statement
       else if (!real.some(e => inR(pd(e.date)))) add('bill', 'Card interest (estimate)', -num(card0) * apr / 365 * dayDiff(a, z));   // statement day unknown: spread day by day
     } }
-  for (const x of S.spending) if (['joint', 'card', 'bills'].includes(x.paidFrom) && !x.sched && sIn(x, spendStamp(x))) add('spend', x.what || 'Purchase', -num(x.amount), pd(x.date));   // pre-orders are counted by their card charge above
+  for (const x of S.spending) if (sharedBuy(x) && sIn(x, spendStamp(x))) add('spend', x.what || 'Purchase', -num(x.amount), pd(x.date));   // pre-orders are counted by their card charge above
   for (const m of S.moves) if (sIn(m, mvStamp(m))){   // moves between our own accounts change nothing; money from outside or out to a personal account does
     if (m.to === 'cash' || m.from === 'cash'){ if (inPool(m.from) !== inPool(m.to)) add('cash', `${mvRoute(m)} (cash at home)`, inPool(m.from) ? -num(m.amount) : num(m.amount), pd(m.date)); }
     else if (mvIn(m)) add('in', isAdd(m) ? `${addLabel(m)}${m.note ? ` (${m.note})` : ''}` : `${mvRoute(m)}${m.note ? ` (${m.note})` : ''}`, num(m.amount), pd(m.date));
@@ -5550,7 +5551,7 @@ function cardIntPanel(){
 }
 
 /* ---------- system health: the page checks itself every time it opens; Claude runs the full check every Monday ---------- */
-const APP_VERSION = '2026.11.14';
+const APP_VERSION = '2026.11.14-2';
 function selfCheck(){   // cheap checks on the data, run on every open: things that don't fit, and the weekly tasks that should have run
   const key = `${S._rt}|${iso(today())}`; if (S._hc && S._hc.k === key) return S._hc.v;
   const items = [], t = today(), add = (st2, area, txt) => items.push({st: st2, area, t: txt});
@@ -6442,13 +6443,16 @@ function taxRules(){
 const r2all = o => JSON.parse(JSON.stringify(o, (k, v) => typeof v === 'number' ? Math.round(v * 100) / 100 : v));
 function yearData(y){   // everything the app counted for one calendar year, as plain numbers: what a closed year keeps
   const Y = String(y), t = today(), s0 = pd(st().startedOn), a = s0 && s0.getFullYear() === y ? s0 : new Date(y, 0, 1), z = new Date(y, 11, 31) < t ? new Date(y, 11, 31) : t;
-  const months = []; for (let m = 0; m < 12; m++){ const r = monthResult(new Date(y, m, 1)); if (r) months.push({m: iso(r.a0).slice(0, 7), in: r.inSum, bills: -r.billSum, spend: -r.spendSum, out: -r.outSum, net: r.net, end: monthEnding(r), partial: r.partial, cur: r.isCur}); }
-  const sum = k => months.reduce((v, x) => v + x[k], 0), sp = S.spending.filter(x => String(x.date || '').startsWith(Y)), cats = {};
-  for (const x of sp){ const c = x.kind === 'unknown' ? 'Unexplained' : x.cat || 'Other'; cats[c] = (cats[c] || 0) + num(x.amount); }
-  const ck = sortedChecks().filter(c => c.date.startsWith(Y)), at = c => c ? {d: c.date, card: num(c.card), ef: num(c.ef), net: checkNet(c)} : null;
+  const months = []; let interest = 0;
+  for (let m = 0; m < 12; m++){ const r = monthResult(new Date(y, m, 1)); if (!r) continue; months.push({m: iso(r.a0).slice(0, 7), in: r.inSum, bills: -r.billSum, spend: -r.spendSum, out: -r.outSum, net: r.net, end: monthEnding(r), partial: r.partial, cur: r.isCur});
+    interest -= r.rows.filter(x => /^Card interest/.test(x.name)).reduce((v, x) => v + x.amt, 0); }   // the same card interest each month counts (the statement's, or the estimate until it's typed)
+  const sum = k => months.reduce((v, x) => v + x[k], 0), sp = S.spending.filter(x => String(x.date || '').startsWith(Y) && x.date >= iso(a)), cats = {};
+  for (const x of sp.filter(sharedBuy)){ const c = x.kind === 'unknown' ? 'Unexplained' : x.cat || 'Other'; cats[c] = (cats[c] || 0) + num(x.amount); }   // the purchases the months count as money out
+  const ck = sortedChecks().filter(c => c.date.startsWith(Y)), at = c => c ? {d: c.date, card: num(c.card), ef: num(c.ef), net: checkNet(c)} : null, live = t <= new Date(y, 11, 31), cs = cardState();
+  const end = live ? {d: iso(t), card: cs ? cs.bal : 0, ef: efEstimate().amount} : at(ck[ck.length - 1]);   // while the year runs: now, like Today; once it's over: its last money check
   const dec = S.changelog.filter(c => String(c.date || '').startsWith(Y) && ['yes', 'no', 'na'].includes(c.rory)), T = taxYear(y);
   return r2all({y, from: iso(a), to: iso(z), done: t > new Date(y, 11, 31), months, in: sum('in'), bills: sum('bills'), spend: sum('spend'), out: sum('out'), net: sum('net'), cats,
-    start: at(ck[0]), end: at(ck[ck.length - 1]), interest: S.cardlog.filter(e => e.type === 'interest' && String(e.date || '').startsWith(Y)).reduce((v, e) => v + num(e.amount), 0),
+    start: at(ck[0]), end, interest,
     rules: {slips: sp.filter(isSlip).length, impulse: sp.filter(x => x.kind === 'impulse').reduce((v, x) => v + num(x.amount), 0), unexplained: cats.Unexplained || 0, pocket: sp.filter(x => x.paidFrom === 'bills').reduce((v, x) => v + num(x.amount), 0)},
     decisions: {together: dec.filter(c => c.rory === 'yes').length, without: dec.filter(c => c.rory === 'no').length, other: dec.filter(c => c.rory === 'na').length},
     tax: {thiago: T.inc.thiago.tot, rory: T.inc.rory.tot, health: T.tot, likely: T.likely, interest: T.net}});

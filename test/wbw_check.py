@@ -1091,7 +1091,7 @@ with sync_playwright() as p:
           return {g: r.g, by, inc: r.income, month: commitAt(monthStart(today())).income, got: r.got, pays: pays.reduce((t, x) => t + x.amt + keepPay(x.who), 0), paid, free: r.free, sum: r.committed + r.g.personal + r.g.saving + r.g.other + r.free}; }""")
         check('Budget: the real month shows each of the shop, cigarettes and drinks at what was really bought this month', all(abs(R['g'][k] - R['by'].get(c, 0)) < .01 for k, c in [('groceries', 'Groceries'), ('cigarettes', 'Cigarettes'), ('drinks', 'Drinks')]), R)
         check('Budget: the real month counts the pays that came (ticked), the card payments made, and is measured against the month’s income', R['got'] >= R['pays'] - .01 and abs(R['g']['card'] - R['paid']) < .01 and abs(R['inc'] - R['month']) < .01 and abs(R['sum'] - R['inc']) < .01, R)
-        check('Budget: the real bar is drawn under the projected one, with the money in so far', 'Real so far' in v and 'Money in so far' in v and 'Not spent yet' in v, v[:900])
+        check('Budget: the real bar is drawn under the projected one, with the money in so far', 'Real so far' in v and 'Our whole pay so far' in v and 'Not spent yet' in v, v[:900])
         d0 = R['g']['drinks']
         ev(f"() => {{ S.f.spend = {{date: '{NOW.date()}', what: 'Kit budget drinks', amount: '7.77', cat: 'Drinks', paidFrom: 'joint', who: 'both', kind: 'planned', told: 'before', note: ''}}; }}"); ev("async () => { await spendSave(); }"); w()
         d1 = ev("() => commitReal(monthStart(today())).g.drinks")
@@ -1157,10 +1157,12 @@ with sync_playwright() as p:
         ev("() => { S.tab = 'money'; S.sub.money = 'year'; S.f.year.view = 'year'; render(); }"); v = view()
         check('Year: Money → Year shows the year first (four numbers, in the black or red), then month by month, where it went, our rules and decisions', all(x in v for x in [str(y), 'Money in', 'Money out', 'Card owes', 'Emergency fund', 'Month by month', 'Where it went', 'Our rules', 'Decisions']) and ev("() => document.querySelectorAll('#view .ios-tile').length") == 4, v[:300])
         Y = ev(f"""() => {{ const Y = yearData({y}), sp = S.spending.filter(x => String(x.date || '').startsWith('{y}')), int = S.cardlog.filter(e => e.type === 'interest' && String(e.date || '').startsWith('{y}')).reduce((v, e) => v + num(e.amount), 0);
-            const ck = sortedChecks().filter(c => c.date.startsWith('{y}')), first = ck[0], last = ck[ck.length - 1];
-            return {{gap: Y.in - Y.bills - Y.spend - Y.out - Y.net, cats: Object.values(Y.cats).reduce((v, x) => v + x, 0), want: sp.reduce((v, x) => v + num(x.amount), 0), int: Y.interest, wantInt: int,
-              start: Y.start && first ? Y.start.card === Math.round(num(first.card) * 100) / 100 : !first, end: Y.end && last ? Y.end.card === Math.round(num(last.card) * 100) / 100 : !last, slips: Y.rules.slips, wantSlips: sp.filter(isSlip).length}}; }}""")
-        check('Year: money in less money out is the result; the purchases are every purchase of the year; card interest is what the statements charged; the card and fund come from the first and last money check of the year', abs(Y['gap']) < .05 and abs(Y['cats'] - Y['want']) < .05 and abs(Y['int'] - Y['wantInt']) < .01 and Y['start'] and Y['end'] and Y['slips'] == Y['wantSlips'], Y)
+            const ck = sortedChecks().filter(c => c.date.startsWith('{y}')), first = ck[0], cs = cardState();
+            const shared = sp.filter(x => ['joint', 'card', 'bills'].includes(x.paidFrom) && !x.sched && x.date >= Y.from), months = Y.months.reduce((v, m) => v + m.spend, 0);
+            let mInt = 0; for (let m = 0; m < 12; m++) {{ const r = monthResult(new Date({y}, m, 1)); if (r) mInt -= r.rows.filter(x => /interest/i.test(x.name) && x.kind === 'bill').reduce((v, x) => v + x.amt, 0); }}
+            return {{gap: Y.in - Y.bills - Y.spend - Y.out - Y.net, cats: Object.values(Y.cats).reduce((v, x) => v + x, 0), want: shared.reduce((v, x) => v + num(x.amount), 0), spend: Y.spend, months, int: Y.interest, wantInt: mInt,
+              start: Y.start && first ? Y.start.card === Math.round(num(first.card) * 100) / 100 : !first, endCard: Y.end ? Y.end.card : null, today: cs ? Math.round(cs.bal * 100) / 100 : 0, endEf: Y.end ? Y.end.ef : null, todayEf: Math.round(efEstimate().amount * 100) / 100, slips: Y.rules.slips, wantSlips: sp.filter(isSlip).length}}; }}""")
+        check('Year: money in less money out is the result; its purchases are the ones the months count (shared money); its card interest is the months’ card interest; while the year runs, the card and the fund are the same as on Today', abs(Y['gap']) < .05 and abs(Y['cats'] - Y['want']) < .05 and abs(Y['spend'] - Y['months']) < .05 and abs(Y['int'] - Y['wantInt']) < .01 and Y['start'] and abs(Y['endCard'] - Y['today']) < .01 and abs(Y['endEf'] - Y['todayEf']) < .01 and Y['slips'] == Y['wantSlips'], Y)
         # January: nothing closes before the 15th; from the 15th the To do opens the year, two taps close it for good, Rory is told
         load(datetime.datetime(y + 1, 1, 4, 9, 0))
         E = ev(f"() => {{ S.tab = 'money'; S.sub.money = 'year'; S.f.year = {{y: '{y}', view: 'year'}}; render(); return {{todo: todoList().some(x => x.to === 'year'), btn: !!document.querySelector('#view [data-act=yearClose]'), view: document.getElementById('view').innerText}}; }}")
@@ -1242,6 +1244,24 @@ with sync_playwright() as p:
         ev("() => { S.canWrite = false; render(); }"); rv = view(); ev("() => { S.canWrite = true; render(); }")
         check('Rory’s report says what the cash at home waits for', 'Cash at home' not in rv or 'waits until' in rv or 'rule 8' in rv, rv[rv.find('Cash at home'):rv.find('Cash at home') + 160] if 'Cash at home' in rv else '')
     step('readygate', f_readygate)
+
+    # ---- Everything talks: the same number is the same on every screen (Thiago, 14 Nov 2026). The kit compares the screens with each other ----
+    def f_talks():
+        load(NOW)
+        for label, js in [('now', ''), ('a week ahead', 'at(NOW + datetime.timedelta(days=7))')]:
+            if js: at(NOW + datetime.timedelta(days=7))
+            C = ev("""() => { const r2 = v => v == null ? null : Math.round(v * 100) / 100, t = today(), ws = weekStartOf(t), D = reportData(ws), J = jointShow(ws), cs = cardState(), A = advisor(), Y = yearData(t.getFullYear()), m = monthResult(t), P = planState(), B = balanceSheet();
+                const a = iso(monthStart(t)), z = iso(t), shared = S.spending.filter(x => sharedBuy(x) && x.date >= a && x.date <= z && (!m || x.date >= iso(m.a))).reduce((v, x) => v + num(x.amount), 0), cr = commitReal(monthStart(t));
+                const ess = c => S.spending.filter(x => x.cat === c && x.date >= iso(cr.a) && x.date <= iso(cr.z)).reduce((v, x) => v + num(x.amount), 0);
+                return {joint: [r2(J.now), r2(D.jointW.now), r2(jointNow().v)], card: [r2(cs && cs.bal), r2(D.cardNow), r2(Y.end && Y.end.card), r2(A.bal)], ef: [r2(efEstimate().amount), r2(P && P.ef), r2(Y.end && Y.end.ef)],
+                  monthBuys: [r2(m ? -m.spendSum : 0), r2(shared)], ess: [[r2(cr.g.groceries || 0), r2(ess('Groceries'))], [r2(cr.g.cigarettes || 0), r2(ess('Cigarettes'))], [r2(cr.g.drinks || 0), r2(ess('Drinks'))]], wants: [r2(A.allowance), r2(prepGate().wants)],
+                  payIn: [r2(cr.got), r2((m ? m.inSum - m.rows.filter(r => r.kind === 'in' && /not ticked yet/.test(r.name)).reduce((v, r) => v + r.amt, 0) : 0) + cr.g.personal)],
+                  yearSum: [r2(Y.months.reduce((v, x) => v + x.net, 0)), r2(Y.net)], short: [num(flow().free) < 0, prepGate().why.some(x => /short/.test(x.s))]}; }""")
+            same = lambda xs: all(x is not None and abs(x - xs[0]) < .01 for x in xs)
+            check(f'Everything talks ({label}): the Joint now, the card and the emergency fund are the same on Today, in Rory’s report, in the year and in the advisor', same(C['joint']) and same(C['card']) and same(C['ef']), {k: C[k] for k in ('joint', 'card', 'ef')})
+            check(f'Everything talks ({label}): this month’s purchases are the same in the month result and in the purchases (shared money); the shop, cigarettes and drinks are the same in the Budget and in the purchases', same(C['monthBuys']) and all(same(x) for x in C['ess']), {k: C[k] for k in ('monthBuys', 'ess')})
+            check(f'Everything talks ({label}): the wants money is the same in the advisor and in Ready; the week’s plan being short stops Ready too; the year adds up its months; the Budget’s whole pay is the Balance’s money in (pays ticked) plus what each of us kept', same(C['wants']) and C['short'][0] == C['short'][1] and same(C['yearSum']) and same(C['payIn']), {k: C[k] for k in ('wants', 'short', 'yearSum', 'payIn')})
+    step('talks', f_talks)
     step('ahead', f_ahead)
     br.close()
 
